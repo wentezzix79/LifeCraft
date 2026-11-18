@@ -30,6 +30,8 @@ namespace LifeCraftRP
         private readonly RawImage bigMap;
         private readonly RectTransform bigMapDot;
         private readonly Texture2D mapTexture;
+        private readonly Texture2D starterMap;
+        private const float StarterMapHalfExtent = 1250f;
         private readonly RectTransform mapContainer;
         private RectTransform rows;
         private Text chat;
@@ -48,6 +50,7 @@ namespace LifeCraftRP
             this.game = game;
             font = Resources.Load<Font>("Art/DejaVuSans") ?? Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
             mapTexture = OmskWorld.LoadMapTexture();
+            starterMap = Resources.Load<Texture2D>("Omsk/starter-map");
             if (EventSystem.current == null)
                 new GameObject("События интерфейса",typeof(EventSystem),typeof(StandaloneInputModule));
             var canvas = new GameObject("LIFE CRAFT · интерфейс",typeof(Canvas),typeof(CanvasScaler),
@@ -201,8 +204,7 @@ namespace LifeCraftRP
                 interaction.text=game.Vehicles.IsNear && !Application.isMobilePlatform ?
                     "[ F ]   Автомобиль" : string.Empty;
             toast.enabled=Time.unscaledTime<toastUntil;
-            Vector2 pos=OmskWorld.MapPosition(game.Player.transform.position);
-            smallMap.uvRect=ZoomRect(pos,.038f,.030f);
+            UpdateMinimap(game.Player.transform.position);
             if(Mode=="map")
                 UpdateBigMap();
             if(Mode=="network" && status!=null)
@@ -442,6 +444,28 @@ namespace LifeCraftRP
         {
             title.text=heading;
             subtitle.text=caption;
+        }
+
+        private void UpdateMinimap(Vector3 world)
+        {
+            const float cityWidth = .038f, cityHeight = .030f;
+            float width=cityWidth*OmskWorld.WorldBounds.width;
+            float height=cityHeight*OmskWorld.WorldBounds.height;
+            if (starterMap != null &&
+                Mathf.Abs(world.x)+width*.5f<=StarterMapHalfExtent &&
+                Mathf.Abs(world.z)+height*.5f<=StarterMapHalfExtent)
+            {
+                const float side=StarterMapHalfExtent*2f;
+                var center=new Vector2((world.x+StarterMapHalfExtent)/side,
+                    (world.z+StarterMapHalfExtent)/side);
+                smallMap.texture=starterMap;
+                smallMap.uvRect=ZoomRect(center,width/side,height/side);
+            }
+            else
+            {
+                smallMap.texture=mapTexture;
+                smallMap.uvRect=ZoomRect(OmskWorld.MapPosition(world),cityWidth,cityHeight);
+            }
         }
 
         private void UpdateBigMap()

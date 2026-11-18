@@ -27,11 +27,40 @@ namespace LifeCraftRP
         private UIManager ui;
         private Camera worldCamera;
         private Light sun;
+        private Material skybox;
+        private Material previousSkybox;
         private float clockMinutes = 9 * 60 + 42;
         private float saveTimer;
         private Vector3 beforeOnline;
         private int quality;
         private WeatherController weather;
+
+        private readonly struct VisualProfile
+        {
+            public readonly float ViewDistance, ShadowDistance;
+            public readonly int DesktopSamples, MobileSamples, Cascades;
+            public readonly ShadowResolution ShadowResolution;
+
+            public VisualProfile(float viewDistance,float shadowDistance,int desktopSamples,
+                int mobileSamples,int cascades,ShadowResolution shadowResolution)
+            {
+                ViewDistance = viewDistance;
+                ShadowDistance = shadowDistance;
+                DesktopSamples = desktopSamples;
+                MobileSamples = mobileSamples;
+                Cascades = cascades;
+                ShadowResolution = shadowResolution;
+            }
+        }
+
+        private static readonly VisualProfile[] VisualProfiles =
+        {
+            new VisualProfile(370f,0f,1,1,1,ShadowResolution.Low),
+            new VisualProfile(510f,42f,2,1,1,ShadowResolution.Medium),
+            new VisualProfile(745f,72f,4,2,2,ShadowResolution.High),
+            new VisualProfile(1020f,116f,4,2,2,ShadowResolution.High),
+            new VisualProfile(1410f,166f,8,4,4,ShadowResolution.VeryHigh),
+        };
 
         private void Awake()
         {
@@ -103,30 +132,94 @@ namespace LifeCraftRP
             sun = obj.GetComponent<Light>();
             sun.type = LightType.Directional;
             sun.shadows = LightShadows.Soft;
-            sun.shadowStrength = .74f;
+            sun.shadowBias = .045f;
+            sun.shadowNormalBias = .34f;
+            sun.shadowNearPlane = .20f;
             RenderSettings.sun = sun;
             RenderSettings.ambientMode = AmbientMode.Trilight;
             RenderSettings.fog = true;
             RenderSettings.fogMode = FogMode.ExponentialSquared;
             RenderSettings.fogDensity = .0011f;
-            RenderSettings.fogColor = new Color(.58f,.68f,.72f);
+
+            Shader skyShader = Shader.Find("Skybox/Procedural");
+            previousSkybox = RenderSettings.skybox;
+            if (skyShader != null && skyShader.isSupported)
+            {
+                skybox = new Material(skyShader) { name = "LC · Атмосфера Омска" };
+                skybox.SetFloat("_SunSize",.028f);
+                skybox.SetFloat("_AtmosphereThickness",.92f);
+                skybox.SetFloat("_SunDisk",2f);
+                skybox.DisableKeyword("_SUNDISK_NONE");
+                skybox.DisableKeyword("_SUNDISK_SIMPLE");
+                skybox.EnableKeyword("_SUNDISK_HIGH_QUALITY");
+                RenderSettings.skybox = skybox;
+            }
             SetLight();
         }
 
         public void ApplyQuality(int preset)
         {
-            quality = Mathf.Clamp(preset,0,4);
-            PlayerPrefs.SetInt("LifeCraft.Graphics", quality);
+            quality = Mathf.Clamp(preset,0,VisualProfiles.Length-1);
+            VisualProfile profile = VisualProfiles[quality];
+            PlayerPrefs.SetInt("LifeCraft.Graphics",quality);
             World.SetViewDistance(quality <= 1);
+
+            bool mobile = Application.isMobilePlatform;
+            bool hdr = !mobile && quality >= 3;
+            int requested = mobile ? profile.MobileSamples : profile.DesktopSamples;
+            int samples = SupportedSamples(requested,hdr);
+            if (hdr && samples == 1)
+            {
+                hdr = false;
+                samples = SupportedSamples(requested,false);
+            }
             if (worldCamera != null)
-                worldCamera.farClipPlane = new [] { 340f,490f,710f,970f,1350f }[quality];
+            {
+                worldCamera.farClipPlane = profile.ViewDistance;
+                worldCamera.allowDynamicResolution = false;
+                worldCamera.allowMSAA = samples > 1;
+                worldCamera.allowHDR = hdr;
+                worldCamera.clearFlags = skybox != null && quality >= 1
+                    ? CameraClearFlags.Skybox : CameraClearFlags.SolidColor;
+            }
             sun.shadows = quality == 0 ? LightShadows.None :
-                quality < 3 ? LightShadows.Hard : LightShadows.Soft;
-            QualitySettings.shadowDistance = new [] { 0f,34f,55f,100f,155f }[quality];
-            RenderPipelineAsset pipeline = GraphicsSettings.currentRenderPipeline;
-            if (pipeline != null)
-                pipeline.GetType().GetProperty("renderScale")?.SetValue(pipeline,
-                    new [] { .63f,.79f,.92f,1f,1f }[quality]);
+                quality == 1 ? LightShadows.Hard : LightShadows.Soft;
+            QualitySettings.shadowDistance = profile.ShadowDistance;
+            QualitySettings.shadowCascades = profile.Cascades > 1 ? profile.Cascades : 0;
+            QualitySettings.shadowResolution = profile.ShadowResolution;
+            QualitySettings.anisotropicFiltering = quality <= 1
+                ? AnisotropicFiltering.Enable : AnisotropicFiltering.ForceEnable;
+            QualitySettings.globalTextureMipmapLimit = 0;
+
+            RenderPipelineAsset pipeline = QualitySettings.renderPipeline ?? GraphicsSettings.defaultRenderPipeline;
+            if (pipeline == null)
+                QualitySettings.antiAliasing = samples > 1 ? samples : 0;
+            else
+            {
+                // URP 14 exposes these properties publicly. Leave other SRP assets alone.
+                Type type = pipeline.GetType();
+                if (type.FullName == "UnityEngine.Rendering.Universal.UniversalRenderPipelineAsset")
+                {
+                    type.GetProperty("renderScale")?.SetValue(pipeline,1f);
+                    type.GetProperty("msaaSampleCount")?.SetValue(pipeline,samples);
+                    type.GetProperty("supportsHDR")?.SetValue(pipeline,hdr);
+                    type.GetProperty("shadowDistance")?.SetValue(pipeline,profile.ShadowDistance);
+                    type.GetProperty("shadowCascadeCount")?.SetValue(pipeline,profile.Cascades);
+                }
+            }
+        }
+
+        private static int SupportedSamples(int requested,bool hdr)
+        {
+            if (requested <= 1)
+                return 1;
+            var target = new RenderTextureDescriptor(64,64,
+                hdr ? RenderTextureFormat.DefaultHDR : RenderTextureFormat.Default,24)
+            {
+                msaaSamples = requested,
+            };
+            int supported = SystemInfo.GetRenderTextureSupportedMSAASampleCount(target);
+            return supported >= 8 ? 8 : supported >= 4 ? 4 : supported >= 2 ? 2 : 1;
         }
 
         public int Quality => quality;
@@ -138,18 +231,36 @@ namespace LifeCraftRP
         {
             float phase = (clockMinutes - 6*60) / 1440f * Mathf.PI * 2;
             float height = Mathf.Sin(phase);
-            float daylight = Mathf.SmoothStep(0f,1f,Mathf.Clamp01((height+.12f)*2.2f));
-            sun.transform.rotation = Quaternion.Euler(Mathf.Max(-9f,height*56f),132f - height*31f,0f);
-            sun.intensity = Mathf.Lerp(.13f,1.18f,daylight);
-            sun.color = Color.Lerp(new Color(.57f,.68f,.96f),new Color(1f,.90f,.77f),daylight);
-            RenderSettings.ambientSkyColor = Color.Lerp(new Color(.16f,.21f,.31f),
-                new Color(.56f,.64f,.71f),daylight);
-            RenderSettings.ambientEquatorColor = Color.Lerp(new Color(.14f,.15f,.19f),
-                new Color(.45f,.48f,.45f),daylight);
-            RenderSettings.ambientGroundColor = new Color(.22f,.24f,.23f);
-            if(worldCamera != null)
-                worldCamera.backgroundColor = Color.Lerp(new Color(.055f,.079f,.147f),
-                    new Color(.51f,.67f,.75f),daylight);
+            float daylight = Mathf.SmoothStep(0f,1f,Mathf.InverseLerp(-.08f,.75f,height));
+            float twilight = Mathf.SmoothStep(0f,1f,Mathf.InverseLerp(-.15f,.25f,height)) *
+                (1f-Mathf.SmoothStep(0f,1f,Mathf.InverseLerp(.24f,.55f,height)));
+            float overcast = Mathf.InverseLerp(.0015f,.009f,RenderSettings.fogDensity);
+            sun.transform.rotation = Quaternion.Euler(Mathf.Max(-9f,height*61f),126f-height*57f,0f);
+            sun.intensity = Mathf.Lerp(.08f,1.36f,daylight) * Mathf.Lerp(1f,.55f,overcast);
+            sun.shadowStrength = Mathf.Lerp(.50f,.84f,daylight) * Mathf.Lerp(1f,.78f,overcast);
+            Color morning = Color.Lerp(new Color(1f,.956f,.884f),new Color(1f,.72f,.49f),twilight*.67f);
+            sun.color = Color.Lerp(new Color(.58f,.70f,1f),morning,daylight+twilight*(1f-daylight));
+
+            RenderSettings.ambientSkyColor = Color.Lerp(new Color(.105f,.147f,.231f),
+                new Color(.60f,.71f,.81f),daylight);
+            RenderSettings.ambientEquatorColor = Color.Lerp(new Color(.069f,.088f,.127f),
+                new Color(.412f,.466f,.496f),daylight);
+            RenderSettings.ambientGroundColor = Color.Lerp(new Color(.050f,.061f,.074f),
+                new Color(.255f,.274f,.267f),daylight);
+            Color horizon = Color.Lerp(new Color(.066f,.102f,.192f),new Color(.586f,.733f,.814f),daylight);
+            horizon = Color.Lerp(horizon,new Color(.831f,.598f,.468f),.33f*twilight);
+            RenderSettings.fogColor = Color.Lerp(horizon,Color.Lerp(new Color(.145f,.187f,.253f),
+                new Color(.679f,.718f,.739f),daylight),overcast*.8f);
+
+            if (worldCamera != null)
+                worldCamera.backgroundColor = horizon;
+            if (skybox != null)
+            {
+                skybox.SetColor("_SkyTint",Color.Lerp(new Color(.25f,.34f,.58f),
+                    new Color(.49f,.55f,.62f),daylight));
+                skybox.SetColor("_GroundColor",RenderSettings.fogColor);
+                skybox.SetFloat("_Exposure",Mathf.Lerp(.31f,1.16f,daylight));
+            }
         }
 
         private void LateUpdate()
@@ -307,6 +418,16 @@ namespace LifeCraftRP
         {
             if (pause && ui != null)
                 SaveProgress();
+        }
+
+        private void OnDestroy()
+        {
+            if (skybox != null)
+            {
+                if (RenderSettings.skybox == skybox)
+                    RenderSettings.skybox = previousSkybox;
+                Destroy(skybox);
+            }
         }
 
         private void OnApplicationQuit()

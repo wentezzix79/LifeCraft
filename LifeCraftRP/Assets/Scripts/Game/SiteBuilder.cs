@@ -22,6 +22,12 @@ namespace LifeCraftRP
         private readonly Transform root;
         private readonly Dictionary<string,Material> materials = new Dictionary<string,Material>();
         private readonly Font font;
+        private readonly MaterialPropertyBlock streetTiling = new MaterialPropertyBlock();
+        private readonly Dictionary<string,float> surfaceTiling = new Dictionary<string,float>
+        {
+            {"asphalt",.226f}, {"walk",.58f}, {"wall",.34f},
+            {"roof",.28f}, {"floor",.46f}, {"grass",.31f},
+        };
         private static readonly Color OffWhite = new Color(.9f,.92f,.88f);
         private static readonly Color Mint = new Color(.32f,.90f,.73f);
 
@@ -45,10 +51,40 @@ namespace LifeCraftRP
             Mat("dark", new Color(.08f,.11f,.13f), null, .4f);
             Mat("violet", new Color(.29f,.23f,.42f));
             Mat("rust", new Color(.65f,.28f,.17f));
-            Mat("foliage", new Color(.20f,.39f,.27f));
             Mat("trunk", new Color(.28f,.20f,.15f));
             Mat("grass", new Color(.30f,.41f,.32f), "Concrete");
             Mat("screen",new Color(.20f,.54f,.55f),null,.42f);
+            StreetMaterial("asphalt","Asphalt",new Color(.56f,.54f,.52f));
+            StreetMaterial("walk","ConcretePavers",new Color(.77f,.73f,.68f));
+            StreetMaterial("wall","WeatheredConcrete",new Color(.85f,.81f,.75f));
+            StreetMaterial("roof","WeatheredConcrete",new Color(.48f,.48f,.46f));
+            StreetMaterial("floor","WeatheredConcrete",new Color(.74f,.72f,.68f));
+            StreetMaterial("grass","Grass",new Color(.76f,.78f,.62f));
+            StreetMaterial("paving","ConcretePavers",new Color(.78f,.75f,.70f));
+            StreetMaterial("panelIvory","WeatheredConcrete",new Color(.83f,.79f,.73f));
+            StreetMaterial("panelSand","WeatheredConcrete",new Color(.78f,.72f,.65f));
+            StreetMaterial("brickWall","Brick",new Color(.76f,.70f,.64f));
+            StreetMaterial("yardGrass","Grass",new Color(.75f,.76f,.59f));
+            StreetMaterial("roadPatch","Asphalt",new Color(.45f,.44f,.43f));
+            StreetMaterial("border","WeatheredConcrete",new Color(.64f,.62f,.59f));
+            Mat("eave",new Color(.30f,.30f,.29f));
+            Mat("facadeBand",new Color(.50f,.49f,.47f));
+            Mat("railMetal",new Color(.09f,.105f,.11f),null,.34f);
+            Mat("glassBlue",new Color(.24f,.34f,.39f),null,.78f);
+            Mat("glassDeep",new Color(.11f,.16f,.18f),null,.68f);
+            Mat("glassWarm",new Color(.51f,.47f,.39f),null,.48f);
+            Mat("windowFrame",new Color(.68f,.67f,.62f));
+            Mat("balconyPanel",new Color(.31f,.36f,.37f),null,.36f);
+            Mat("bark",new Color(.34f,.27f,.21f));
+            Mat("leavesShade",new Color(.17f,.28f,.12f));
+            Mat("leavesMoss",new Color(.30f,.41f,.19f));
+            Mat("leavesTop",new Color(.44f,.49f,.25f));
+        }
+
+        private void StreetMaterial(string key,string texture,Color color)
+        {
+            Mat(key,color);
+            StreetMaterials.Apply(materials[key],texture);
         }
 
         private void Mat(string key,Color color,string texture = null,float gloss = .07f)
@@ -59,6 +95,8 @@ namespace LifeCraftRP
                 mat.SetColor("_BaseColor",color);
             if (mat.HasProperty("_Smoothness"))
                 mat.SetFloat("_Smoothness",gloss);
+            if (mat.HasProperty("_Glossiness"))
+                mat.SetFloat("_Glossiness",gloss);
             if (texture != null)
             {
                 Texture2D albedo = Resources.Load<Texture2D>("Art/" + texture);
@@ -76,7 +114,11 @@ namespace LifeCraftRP
             obj.transform.SetParent(parent ?? root, false);
             obj.transform.localPosition = position;
             obj.transform.localScale = size;
-            obj.GetComponent<Renderer>().sharedMaterial = materials[material];
+            var renderer=obj.GetComponent<Renderer>();
+            renderer.sharedMaterial=materials[material];
+            if (kind == PrimitiveType.Cube && surfaceTiling.TryGetValue(material,out float repeat))
+                StreetMaterials.SetTiling(renderer,streetTiling,
+                    Mathf.Max(.15f,size.x*repeat),Mathf.Max(.15f,Mathf.Max(size.y,size.z)*repeat));
             if (!solid)
                 obj.GetComponent<Collider>().enabled = false;
             return obj;
@@ -153,14 +195,6 @@ namespace LifeCraftRP
             game.Interactions.Add(label,new Vector3(x,.2f,z),action);
         }
 
-        private void Tree(float x,float z,int variant)
-        {
-            Primitive("Ствол",new Vector3(x,1.45f,z),new Vector3(.23f,1.45f,.23f),
-                      "trunk",false,root,PrimitiveType.Cylinder);
-            Primitive("Крона",new Vector3(x,3.35f,z),new Vector3(2.8f+(variant%3)*.36f,2.9f,2.7f),
-                      "foliage",false,root,PrimitiveType.Sphere);
-        }
-
         private void Lamp(float x,float z)
         {
             Box("Столб",x,2.5f,z,.125f,5f,.125f,"dark",false);
@@ -185,8 +219,7 @@ namespace LifeCraftRP
             for (int x = -101; x < 112; x += 17)
             {
                 Lamp(x,-46);
-                if (x < -54 || x > 27)
-                    Tree(x,-49,x);
+
             }
             for (int x = 0; x < 10; x++)
                 Box("Пешеходный переход",10+x*.59f,.192f,-36,.31f,.014f,5.7f,"roadmark",false);
@@ -194,7 +227,7 @@ namespace LifeCraftRP
             Warehouse();
             Services();
             Apartments();
-            StreetBackdrop();
+            new StreetScenery(root,materials).Build();
         }
 
         private void Warehouse()
@@ -336,31 +369,5 @@ namespace LifeCraftRP
             Spot("Инвентарь",62.2f,28.85f,()=>game.Open("inventory"));
         }
 
-        private void StreetBackdrop()
-        {
-            var rng = new System.Random(178);
-            for (int i=0;i<6;i++)
-            {
-                float x = -100 + i*17;
-                float z = -75;
-                float h = 9+(i%3)*3.1f;
-                Box("Жилой фасад",x,h/2,z,13.5f,h,11.5f,"wall");
-                Box("Карниз",x,h,z,14.1f,.25f,12.2f,"roof",false);
-                for (float y=2.2f;y<h-1;y+=2.5f)
-                    for(int w=-2;w<=2;w++)
-                        Box("Окно",x+w*2.2f,y,z+5.79f,1.24f,1.5f,.055f,
-                            rng.Next(3)==0?"screen":"dark",false);
-                Box("Дворовая дорожка",x,.13f,z+10.3f,1.5f,.14f,9.7f,"walk",false);
-            }
-            for (int i=0;i<9;i++)
-                Tree(-99+8*i,69,i);
-            for (int i=0;i<8;i++)
-                Tree(34+8*i,60,i+4);
-            for (int i=0;i<4;i++)
-            {
-                Box("Лавка",32+i*10,.58f,55,2.15f,.15f,.63f,"trunk");
-                Box("Спинка",32+i*10,.96f,55.28f,2.15f,.34f,.10f,"trunk");
-            }
-        }
     }
 }

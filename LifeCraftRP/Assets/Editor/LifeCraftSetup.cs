@@ -84,6 +84,11 @@ namespace LifeCraftRP.Editor
                     ResourceReloader.ReloadAllNullIn(pipeline, UniversalRenderPipelineAsset.packagePath);
                 }
 
+                var quality = new SerializedObject(pipeline);
+                quality.FindProperty("m_MainLightShadowmapResolution").intValue = 2048;
+                quality.FindProperty("m_SoftShadowsSupported").boolValue = true;
+                quality.ApplyModifiedPropertiesWithoutUndo();
+
                 GraphicsSettings.defaultRenderPipeline = pipeline;
                 QualitySettings.renderPipeline = pipeline;
             }
@@ -113,7 +118,8 @@ namespace LifeCraftRP.Editor
             foreach(string name in new [] {
                 "Universal Render Pipeline/Lit", "Universal Render Pipeline/Simple Lit",
                 "Universal Render Pipeline/Unlit", "Universal Render Pipeline/Particles/Unlit",
-                "Standard", "Diffuse", "Unlit/Color", "Particles/Standard Unlit", "Unlit/Transparent"
+                "Standard", "Diffuse", "Unlit/Color", "Particles/Standard Unlit", "Unlit/Transparent",
+                "Skybox/Procedural"
             })
             {
                 Shader shader=Shader.Find(name);

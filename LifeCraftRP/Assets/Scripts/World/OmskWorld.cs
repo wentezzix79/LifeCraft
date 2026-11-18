@@ -31,10 +31,16 @@ namespace LifeCraft.World
         public Transform target;
 
         private static readonly string[] Palette = {
-            "#416F8E", "#687851", "#465C43", "#827952", "#838277",
-            "#585D5D", "#51565B", "#9A998B", "#70635B", "#C7C1A7",
-            "#ADAAA1", "#B2A99E", "#9C7361", "#898E90", "#736F69",
-            "#445968", "#594938", "#57734C", "#777C6A"
+            "#465F66", "#B7B693", "#959D80", "#B1A17D", "#B1AA9B",
+            "#B1ACA7", "#9D9E9C", "#B4B0A8", "#766F64", "#D0CDBD",
+            "#DAD4C9", "#CEC4B7", "#C2A08D", "#BEBCB0", "#A3A19B",
+            "#58636A", "#62513E", "#596746", "#A9A48A"
+        };
+        private static readonly string[] TextureByStyle = {
+            null, "Grass", "Grass", "Grass", "WeatheredConcrete",
+            "Asphalt", "Asphalt", "ConcretePavers", "Asphalt", null,
+            "WeatheredConcrete", "WeatheredConcrete", "Brick", "WeatheredConcrete", "WeatheredConcrete",
+            null, null, null, "Grass"
         };
         // Named districts are representative points for wayfinding.
         private static readonly (string Name, double Lon, double Lat)[] Districts = {
@@ -303,10 +309,20 @@ namespace LifeCraft.World
                 ColorUtility.TryParseHtmlString(Palette[i], out var color);
                 var m = new Material(shader) { name = "Omsk/GIS " + i, color = color };
                 m.enableInstancing = true;
+                if (m.HasProperty("_BaseColor"))
+                    m.SetColor("_BaseColor",color);
+                float smoothness = i == 0 || i == 15 ? .52f : .11f;
                 if (m.HasProperty("_Smoothness"))
-                    m.SetFloat("_Smoothness", i == 0 || i == 15 ? .6f : .12f);
+                    m.SetFloat("_Smoothness", smoothness);
+                if (m.HasProperty("_Glossiness"))
+                    m.SetFloat("_Glossiness", smoothness);
                 if (m.HasProperty("_Metallic"))
                     m.SetFloat("_Metallic", i == 15 ? .24f : 0f);
+                if (TextureByStyle[i] != null)
+                {
+                    float repeat = i == 18 || i <= 3 ? 7f : i == 12 ? 2.4f : 4.5f;
+                    LifeCraftRP.StreetMaterials.Apply(m,TextureByStyle[i],1f/repeat,1f/repeat);
+                }
                 materials[i] = m;
             }
         }
@@ -324,9 +340,14 @@ namespace LifeCraft.World
                     new Vector3(x0, 0, z0), new Vector3(x0, 0, z1),
                     new Vector3(x1, 0, z1), new Vector3(x1, 0, z0)
                 },
+                uv = new[] {
+                    new Vector2(x0,z0), new Vector2(x0,z1),
+                    new Vector2(x1,z1), new Vector2(x1,z0)
+                },
                 triangles = new[] { 0, 1, 2, 0, 2, 3 }
             };
             groundMesh.RecalculateNormals();
+            groundMesh.RecalculateTangents();
             ground.AddComponent<MeshFilter>().sharedMesh = groundMesh;
             ground.AddComponent<MeshRenderer>().sharedMaterial = materials[18];
             var collider = ground.AddComponent<BoxCollider>();
@@ -426,30 +447,72 @@ namespace LifeCraft.World
         private Mesh MakeDisplay(GameObject targetObject, List<Group> groups, bool detail, out MeshRenderer renderer)
         {
             var points = new List<Vector3>();
+            var uv = new List<Vector2>();
             var activeMaterials = new List<Material>();
             var partIndices = new List<int[]>();
+            var origin = targetObject.transform.position;
             foreach (var group in groups)
             {
                 if (group.Detail != detail)
                     continue;
-                int offset = points.Count;
-                points.AddRange(group.Points);
-                for (int j = 0; j < group.Indices.Length; j++)
-                    group.Indices[j] += offset;
-                partIndices.Add(group.Indices);
+                if (group.Style >= 10 && group.Style <= 13)
+                    partIndices.Add(ProjectWalls(group,origin,points,uv));
+                else
+                {
+                    int offset = points.Count;
+                    points.AddRange(group.Points);
+                    foreach (Vector3 point in group.Points)
+                        uv.Add(new Vector2(point.x+origin.x,point.z+origin.z));
+                    for (int j = 0; j < group.Indices.Length; j++)
+                        group.Indices[j] += offset;
+                    partIndices.Add(group.Indices);
+                }
                 activeMaterials.Add(materials[group.Style]);
             }
             var mesh = new Mesh { name = targetObject.name, indexFormat = Format(points.Count) };
             mesh.SetVertices(points);
+            mesh.SetUVs(0,uv);
             mesh.subMeshCount = partIndices.Count;
             for (int i = 0; i < partIndices.Count; i++)
                 mesh.SetTriangles(partIndices[i], i, false);
             mesh.RecalculateBounds();
             mesh.RecalculateNormals();
+            if (!detail && points.Count > 0)
+                mesh.RecalculateTangents();
             targetObject.AddComponent<MeshFilter>().sharedMesh = mesh;
             renderer = targetObject.AddComponent<MeshRenderer>();
             renderer.sharedMaterials = activeMaterials.ToArray();
             return mesh;
+        }
+
+        private static int[] ProjectWalls(Group group,Vector3 origin,List<Vector3> points,List<Vector2> uv)
+        {
+            // Share render vertices within each projection, splitting at corners
+            // where a wall turns onto a different axis. Collision still uses the source points.
+            var result = new int[group.Indices.Length];
+            var lookup = new int[group.Points.Length*2];
+            for (int i = 0; i < group.Indices.Length; i += 3)
+            {
+                Vector3 a=group.Points[group.Indices[i]];
+                Vector3 b=group.Points[group.Indices[i+1]];
+                Vector3 c=group.Points[group.Indices[i+2]];
+                var normal = Vector3.Cross(b-a,c-a);
+                bool projectOnZ = Mathf.Abs(normal.x) > Mathf.Abs(normal.z);
+                for (int j = i; j < i+3; j++)
+                {
+                    int source=group.Indices[j];
+                    int key=source*2+(projectOnZ ? 1 : 0);
+                    if (lookup[key] == 0)
+                    {
+                        Vector3 point=group.Points[source];
+                        lookup[key]=points.Count+1;
+                        points.Add(point);
+                        uv.Add(new Vector2(projectOnZ ? point.z+origin.z : point.x+origin.x,point.y));
+                    }
+                    result[j]=lookup[key]-1;
+                }
+            }
+            return result;
         }
 
         private void ApplyDistance(Tile tile, int distance)
