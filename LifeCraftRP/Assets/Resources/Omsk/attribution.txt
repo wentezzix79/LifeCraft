@@ -1,0 +1,7 @@
+© OpenStreetMap contributors
+https://www.openstreetmap.org/copyright
+Open Database License (ODbL) 1.0
+https://opendatacommons.org/licenses/odbl/1-0/
+Omsk extract, OpenStreetMap France, 2026-11-17
+https://download.openstreetmap.fr/extracts/russia/siberian_federal_district/omsk_oblast-latest.osm.pbf
+Transformed to a local metre grid and clipped into streaming meshes. Buildings in the fictional start facility footprint have been removed.
