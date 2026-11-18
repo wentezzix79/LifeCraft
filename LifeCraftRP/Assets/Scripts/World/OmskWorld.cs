@@ -296,11 +296,7 @@ namespace LifeCraft.World
 
         private void MakeMaterials()
         {
-            var shader = Shader.Find("Universal Render Pipeline/Lit");
-            if (!shader)
-                shader = Shader.Find("Standard");
-            if (!shader)
-                shader = Shader.Find("Unlit/Color");
+            var shader = LifeCraftRP.RuntimeShaders.Lit();
             materials = new Material[Palette.Length];
             for (int i = 0; i < materials.Length; i++)
             {

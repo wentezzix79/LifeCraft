@@ -30,8 +30,7 @@ namespace LifeCraftRP
             var shape = controller.particles.shape;
             shape.shapeType = ParticleSystemShapeType.Box;
             shape.scale = new Vector3(26,26,1);
-            Shader shader = Shader.Find("Universal Render Pipeline/Particles/Unlit") ??
-                Shader.Find("Particles/Standard Unlit");
+            Shader shader = RuntimeShaders.ParticlesUnlit();
             if (shader != null)
                 controller.effect.sharedMaterial = new Material(shader);
             go.SetActive(true);

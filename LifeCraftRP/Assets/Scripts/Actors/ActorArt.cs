@@ -12,9 +12,7 @@ namespace LifeCraftRP
             var key = (color,gloss,metallic);
             if (Paints.TryGetValue(key,out var cached) && cached)
                 return cached;
-            Shader shader = Shader.Find("Universal Render Pipeline/Lit");
-            if (!shader)
-                shader = Shader.Find("Standard");
+            Shader shader = RuntimeShaders.Lit();
             var material = new Material(shader) { color = color, name = "LC · " + ColorUtility.ToHtmlStringRGB(color) };
             if (material.HasProperty("_BaseColor"))
                 material.SetColor("_BaseColor",color);

@@ -53,7 +53,7 @@ namespace LifeCraftRP
 
         private void Mat(string key,Color color,string texture = null,float gloss = .07f)
         {
-            Shader shader = Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard");
+            Shader shader = RuntimeShaders.Lit();
             var mat = new Material(shader) { name = "LC · " + key, color = color };
             if (mat.HasProperty("_BaseColor"))
                 mat.SetColor("_BaseColor",color);
