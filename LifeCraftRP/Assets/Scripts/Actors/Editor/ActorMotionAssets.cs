@@ -12,6 +12,7 @@ namespace LifeCraftRP
     {
         private const string ActorFolder = "Assets/Scripts/Actors/Resources/LifeCraftActors";
         private const string ControllerPath = ActorFolder + "/Avatar.controller";
+        private const string RelaxedIdle = "Relaxed Idle";
 
         [InitializeOnLoadMethod]
         private static void ScheduleBuild() => EditorApplication.delayCall += Ensure;
@@ -19,8 +20,18 @@ namespace LifeCraftRP
         [MenuItem("Life Craft/Подготовить анимации персонажа")]
         internal static void Ensure()
         {
-            if (AssetDatabase.LoadAssetAtPath<AnimatorController>(ControllerPath))
+            var existing = AssetDatabase.LoadAssetAtPath<AnimatorController>(ControllerPath);
+            if (existing)
+            {
+                var stateMachine = existing.layers[0].stateMachine;
+                if (Array.Exists(stateMachine.states, row => row.state.name == "Idle") &&
+                    !Array.Exists(stateMachine.states, row => row.state.name == RelaxedIdle))
+                {
+                    Add(stateMachine,existing,RelaxedIdle,4.8f,true,0f);
+                    AssetDatabase.SaveAssets();
+                }
                 return;
+            }
             MakeFolder("Assets/Scripts/Actors","Resources");
             MakeFolder("Assets/Scripts/Actors/Resources","LifeCraftActors");
             var controller = AnimatorController.CreateAnimatorControllerAtPath(ControllerPath);
@@ -28,6 +39,7 @@ namespace LifeCraftRP
             {
                 var machine = controller.layers[0].stateMachine;
                 Add(machine,controller,"Idle",1.2f,true,0f);
+                Add(machine,controller,RelaxedIdle,4.8f,true,0f);
                 Add(machine,controller,"Walk",.80f,true,25f);
                 Add(machine,controller,"Run",.66f,true,38f);
                 Add(machine,controller,"Sprint",.51f,true,52f);
@@ -45,7 +57,7 @@ namespace LifeCraftRP
                 Add(machine,controller,"Open Door",.54f,false,0f);
                 Add(machine,controller,"Work",.70f,false,0f);
                 Add(machine,controller,"Phone",1.2f,true,0f);
-                machine.defaultState = Array.Find(machine.states, row => row.state.name == "Idle").state;
+                machine.defaultState = Array.Find(machine.states, row => row.state.name == RelaxedIdle).state;
                 AssetDatabase.SaveAssets();
             }
             catch
@@ -66,6 +78,7 @@ namespace LifeCraftRP
         {
             var state = machine.AddState(label);
             var clip = new AnimationClip { name=label, frameRate=30f, legacy=false };
+            bool relaxed = label == RelaxedIdle;
             var settings = AnimationUtility.GetAnimationClipSettings(clip);
             settings.loopTime = loops;
             AnimationUtility.SetAnimationClipSettings(clip,settings);
@@ -75,6 +88,7 @@ namespace LifeCraftRP
                 float action = Mathf.Sin(t*Mathf.PI);
                 switch (label)
                 {
+                    case RelaxedIdle: return .949f+.0022f*sway;
                     case "Crouch": return .62f+.01f*sway;
                     case "Drive": return .40f+.005f*sway;
                     case "Sit": return Mathf.Lerp(.95f,.47f,t);
@@ -89,13 +103,19 @@ namespace LifeCraftRP
             Curve(clip,"Body",length,t =>
             {
                 var a = Mathf.Sin(t*Mathf.PI);
+                if (relaxed)
+                    return Quaternion.Euler(2.4f+.62f*Mathf.Sin(t*2f*Mathf.PI),-1.6f,-.9f);
                 float bend = label == "Crouch" ? 18f : label == "Pick Up" ? a*33f : label == "Drive" ? 8f : 3f+stride*.15f;
                 float turn = label == "Punch" ? a*24f : label.Contains("Vehicle") ? a*24f : 0f;
                 return Quaternion.Euler(bend,turn,0f);
             });
             Curve(clip,"Body/Head",length,t =>
-                Quaternion.Euler(label == "Phone" ? -4f : label == "Pick Up" ? 16f : -3f,
-                    label == "Idle" || label == "Drive" ? Mathf.Sin(t*Mathf.PI*2f)*4f : 0f,0f));
+            {
+                if (relaxed)
+                    return Quaternion.Euler(-2.9f+.7f*Mathf.Cos(t*2f*Mathf.PI),2.2f*Mathf.Sin(t*2f*Mathf.PI),1.1f);
+                return Quaternion.Euler(label == "Phone" ? -4f : label == "Pick Up" ? 16f : -3f,
+                    label == "Idle" || label == "Drive" ? Mathf.Sin(t*Mathf.PI*2f)*4f : 0f,0f);
+            });
 
             for (var i=0;i<2;i++)
             {
@@ -131,6 +151,8 @@ namespace LifeCraftRP
                 Curve(clip,ankle,length,t => Quaternion.Euler(-Cycle(t)*stride*.21f,side*2f,0f));
                 Curve(clip,shoulder,length,t =>
                 {
+                    if (relaxed)
+                        return Quaternion.Euler(-2.8f,-side*5f,side*5f);
                     float angle = -Cycle(t)*stride*.77f;
                     if (seated) angle = -51f;
                     if (squat) angle -= 13f;
@@ -144,6 +166,8 @@ namespace LifeCraftRP
                 });
                 Curve(clip,shoulder+"/Elbow "+i,length,t =>
                 {
+                    if (relaxed)
+                        return Quaternion.Euler(-23f+.8f*Mathf.Sin(t*2f*Mathf.PI),side*4f,-side*21f);
                     float angle = -12f-Mathf.Max(0f,-Cycle(t))*stride*.59f;
                     if (seated) angle = -42f;
                     if (label == "Carry") angle = -49f;

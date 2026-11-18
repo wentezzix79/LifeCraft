@@ -6,13 +6,13 @@ namespace LifeCraftRP
     public sealed class PlayerAnimationController : MonoBehaviour
     {
         private static readonly Color Jacket = new Color(.024f,.022f,.026f);
-        private static readonly Color Shirt = new Color(.031f,.028f,.029f);
         private static readonly Color Pants = new Color(.035f,.033f,.037f);
         private static readonly Color Rubber = new Color(.846f,.856f,.846f);
-        private static readonly Color SkinTone = new Color(.62f,.38f,.267f);
-        private static readonly Color Hair = new Color(.235f,.124f,.065f);
+        private static readonly Color SkinTone = new Color(.72f,.51f,.396f);
+        private static readonly Color Hair = new Color(.257f,.177f,.111f);
         private static readonly Color WorkBlue = new Color(.105f,.296f,.75f);
         private static readonly Color WorkLime = new Color(.79f,.87f,.27f);
+        private static readonly int RelaxedIdle = Animator.StringToHash("Base Layer.Relaxed Idle");
 
         private readonly Transform[] shoulders = new Transform[2];
         private readonly Transform[] elbows = new Transform[2];
@@ -55,21 +55,20 @@ namespace LifeCraftRP
             body = ActorArt.Joint("Body", Visual, new Vector3(0f,.95f,0f));
 
             Material skin = ActorArt.Paint(SkinTone,.29f);
-            Material hair = ActorArt.Paint(Hair,.43f);
-            Material copper = ActorArt.Paint(new Color(.38f,.23f,.123f),.45f);
-            Material blonde = ActorArt.Paint(new Color(.54f,.35f,.184f),.44f);
+            Material hair = ActorArt.Paint(Hair,.24f);
+            Material copper = ActorArt.Paint(new Color(.405f,.288f,.188f),.23f);
+            Material blonde = ActorArt.Paint(new Color(.515f,.383f,.262f),.24f);
             Material jacket = ActorArt.Paint(Jacket,.59f);
             Material leatherEdge = ActorArt.Paint(new Color(.046f,.043f,.042f),.47f);
-            Material shirt = ActorArt.Paint(Shirt,.16f);
             Material pants = ActorArt.Paint(Pants,.26f);
             Material rubber = ActorArt.Paint(Rubber,.20f);
             Material shoeGrey = ActorArt.Paint(new Color(.40f,.414f,.414f),.24f);
             Material shoeWhite = ActorArt.Paint(new Color(.83f,.826f,.766f),.31f);
             Material frame = ActorArt.Paint(new Color(.012f,.012f,.016f),.76f);
-            Material lens = ActorArt.Paint(new Color(.018f,.023f,.031f),.95f,.18f);
+            Material lens = ActorArt.Paint(new Color(.028f,.025f,.024f),.86f,.13f);
             Material silver = ActorArt.Paint(new Color(.81f,.80f,.75f),.53f,.70f);
             Material trim = ActorArt.Paint(new Color(.135f,.112f,.089f),.40f);
-            Material lining = ActorArt.Paint(new Color(.125f,.011f,.021f),.31f);
+            Material webbing = ActorArt.Paint(new Color(.045f,.041f,.039f),.19f);
 
             GameObject Form(PrimitiveType type, string name, Transform joint,
                 float x, float y, float z, float w, float h, float d, Material material)
@@ -78,32 +77,9 @@ namespace LifeCraftRP
             AvatarCloth.Jacket(body,jacket);
             AvatarCloth.TailoringDetails(body,leatherEdge,jacket,trim);
             ActorArt.Loft("Джинсы · пояс",body,
-                new[]{new Vector3(0,-.124f,0f),new Vector3(0,-.049f,0f),
+                new[]{new Vector3(0,-.082f,0f),new Vector3(0,-.049f,0f),
                     new Vector3(0,.022f,0f)},
-                new[]{new Vector2(.178f,.103f),new Vector2(.181f,.113f),new Vector2(.168f,.100f)},24,pants);
-            Form(PrimitiveType.Sphere,"Футболка под курткой",body,0,.436f,.086f,.157f,.112f,.040f,shirt);
-            ActorArt.Loft("Шея · переход к челюсти",body,
-                new[]{new Vector3(0,.474f,-.011f),new Vector3(0,.495f,.004f),
-                    new Vector3(0,.525f,.017f),new Vector3(0,.553f,.019f),new Vector3(0,.579f,.021f)},
-                new[]{new Vector2(.071f,.055f),new Vector2(.057f,.049f),
-                    new Vector2(.044f,.047f),new Vector2(.044f,.048f),new Vector2(.039f,.043f)},28,skin);
-            Form(PrimitiveType.Cube,"Молния куртки",body,.010f,.151f,.130f,.006f,.325f,.007f,trim);
-            Form(PrimitiveType.Cube,"Бегунок молнии",body,.010f,.300f,.136f,.016f,.024f,.007f,silver);
-            for(int side=-1;side<=1;side+=2)
-            {
-                Vector3 outer = new Vector3(side*.128f,.462f,.105f);
-                ActorArt.Surface("Бордовая подкладка",body,
-                    new Vector3(side*.021f,.288f,.128f),new Vector3(side*.073f,.467f,.114f),
-                    new Vector3(side*.108f,.429f,.127f),lining);
-                ActorArt.Surface("Отложной воротник",body,
-                    new Vector3(side*.021f,.322f,.133f),outer,
-                    new Vector3(side*.111f,.398f,.146f),leatherEdge);
-                ActorArt.Bar("Кромка лацкана",body,new Vector3(side*.026f,.326f,.137f),
-                    new Vector3(side*.129f,.462f,.108f),.004f,.006f,jacket);
-                ActorArt.Bar("Прорезь кармана",body,new Vector3(side*.103f,.077f,.108f),
-                    new Vector3(side*.161f,.145f,.077f),.012f,.013f,leatherEdge);
-            }
-
+                new[]{new Vector2(.158f,.094f),new Vector2(.167f,.098f),new Vector2(.164f,.098f)},24,pants);
             bag = ActorArt.Joint("Messenger bag",body,Vector3.zero).gameObject;
             var slash = new[]
             {
@@ -112,9 +88,9 @@ namespace LifeCraftRP
                 new Vector3(.166f,.035f,.116f),
             };
             for(int i=0;i<slash.Length-1;i++)
-                ActorArt.Bar("Ремень сумки",bag.transform,slash[i],slash[i+1],.031f,.013f,frame);
+                ActorArt.Bar("Ремень сумки",bag.transform,slash[i],slash[i+1],.027f,.007f,webbing);
             ActorArt.Bar("Ремень на спине",bag.transform,new Vector3(-.134f,.455f,-.085f),
-                new Vector3(.169f,.024f,-.104f),.033f,.015f,frame);
+                new Vector3(.169f,.024f,-.104f),.027f,.007f,webbing);
             ActorArt.RoundedPanel("Сумка через плечо",bag.transform,new Vector3(.149f,.017f,-.066f),
                 .171f,.217f,.117f,5.5f,leatherEdge);
             ActorArt.RoundedPanel("Клапан сумки",bag.transform,new Vector3(.149f,.066f,-.126f),
@@ -142,6 +118,48 @@ namespace LifeCraftRP
             vest.SetActive(false);
 
             head = ActorArt.Joint("Head",body,new Vector3(0f,.556f,.022f));
+            bool anatomicalHead = AvatarHead.Build(head,skin);
+            if (!anatomicalHead)
+                BuildFallbackHead(body,head,skin);
+            AvatarHair.Build(head,hair,copper,blonde);
+            AvatarEyewear.Build(head,frame,lens,silver,anatomicalHead);
+
+            for (var i=0;i<2;i++)
+            {
+                float side = i == 0 ? -1f : 1f;
+                shoulders[i] = ActorArt.Joint("Shoulder "+i,body,new Vector3(side*.190f,.409f,0));
+                elbows[i] = ActorArt.Joint("Elbow "+i,shoulders[i],new Vector3(0,-.257f,0));
+                AvatarCloth.Sleeve(shoulders[i],elbows[i],side,jacket);
+                Form(PrimitiveType.Sphere,"Кисть",elbows[i],0,-.258f,.007f,.062f,.068f,.047f,skin);
+                for (int f=0;f<4;f++)
+                    Form(PrimitiveType.Sphere,"Палец",elbows[i],-.019f+f*.0126f,
+                        -.286f-(f==1||f==2?.005f:0f),.012f,.014f,.043f,.022f,skin);
+                Form(PrimitiveType.Sphere,"Большой палец",elbows[i],-side*.025f,-.262f,.022f,
+                    .018f,.048f,.025f,skin);
+
+                hips[i] = ActorArt.Joint("Hip "+i,body,new Vector3(side*.083f,-.012f,0f));
+                knees[i] = ActorArt.Joint("Knee "+i,hips[i],new Vector3(0,-.406f,0));
+                AvatarCloth.Jeans(hips[i],knees[i],side,pants);
+                ankles[i] = ActorArt.Joint("Ankle "+i,knees[i],new Vector3(0,-.410f,0));
+                AvatarFootwear.Build(ankles[i],side,rubber,shoeGrey,shoeWhite);
+            }
+            box = ActorArt.Form(PrimitiveType.Cube,"Carried parcel",body,new Vector3(0,.078f,.350f),
+                new Vector3(.365f,.285f,.335f),ActorArt.Paint(new Color(.55f,.368f,.176f)));
+            ActorArt.Form(PrimitiveType.Cube,"Packing tape",box.transform,new Vector3(0,.505f,0),
+                new Vector3(.17f,.015f,1.005f),ActorArt.Paint(new Color(.71f,.519f,.24f)));
+            phone = ActorArt.Form(PrimitiveType.Cube,"Phone",elbows[1],new Vector3(0,-.24f,.04f),
+                new Vector3(.06f,.102f,.015f),ActorArt.Paint(new Color(.18f,.21f,.28f),.75f));
+            box.SetActive(false);
+            phone.SetActive(false);
+        }
+
+        private static void BuildFallbackHead(Transform body,Transform head,Material skin)
+        {
+            ActorArt.Loft("Шея · переход к челюсти",body,
+                new[]{new Vector3(0,.474f,-.011f),new Vector3(0,.495f,.004f),
+                    new Vector3(0,.525f,.017f),new Vector3(0,.553f,.019f),new Vector3(0,.579f,.021f)},
+                new[]{new Vector2(.071f,.055f),new Vector2(.057f,.049f),
+                    new Vector2(.044f,.047f),new Vector2(.044f,.048f),new Vector2(.039f,.043f)},28,skin);
             var sections = new[] {
                 new Vector3(.002f,.026f,.035f),new Vector3(.019f,.046f,.051f),
                 new Vector3(.043f,.059f,.063f),new Vector3(.066f,.065f,.071f),
@@ -257,66 +275,18 @@ namespace LifeCraftRP
             MouthBand("Верхняя губа",lip,.0004f,.0044f);
             MouthBand("Нижняя губа",lowerLip,-.0048f,-.0006f);
             MouthBand("Линия губ",lipSeam,-.00065f,.00055f);
-            AvatarHair.Build(head,hair,copper,blonde);
-
-            ActorArt.Bar("Перемычка очков",head,new Vector3(-.010f,.147f,.096f),
-                new Vector3(.010f,.147f,.096f),.009f,.008f,frame);
             Material earDepth = ActorArt.Paint(new Color(.449f,.255f,.189f),.31f);
             Material noseShadow = ActorArt.Paint(new Color(.306f,.152f,.112f),.28f);
-            for (var i=0;i<2;i++)
+            for (int i=-1;i<=1;i+=2)
             {
-                float side=i==0 ? -1f : 1f;
-                Form(PrimitiveType.Sphere,"Ушная раковина",head,side*.082f,.103f,-.003f,
-                    .027f,.046f,.032f,skin);
-                Form(PrimitiveType.Sphere,"Углубление ушной раковины",head,side*.088f,.105f,.009f,
-                    .009f,.021f,.009f,earDepth);
-                Form(PrimitiveType.Sphere,"Серебряная серьга",head,side*.093f,.084f,.009f,
-                    .009f,.008f,.007f,silver);
-                Form(PrimitiveType.Sphere,"Тень под крылом носа",head,side*.011f,.094f,
-                    FaceAt(side*.011f,.094f),.007f,.0023f,.0028f,noseShadow);
-                GameObject border=ActorArt.RoundedPanel("Широкая чёрная оправа",head,
-                    new Vector3(side*.0438f,.139f,.094f),.0775f,.0445f,.014f,7.5f,frame);
-                ActorArt.RoundedPanel("Тёмная линза",border.transform,
-                    new Vector3(0f,-.001f,.0072f),.0685f,.0374f,.0058f,7.2f,lens);
-                border.transform.localRotation=Quaternion.Euler(0f,side*13f,-side*1.5f);
-                ActorArt.RoundedPanel("Петля оправы",head,
-                    new Vector3(side*.080f,.145f,.077f),.008f,.010f,.014f,4f,frame);
-                var temple=ActorArt.Bar("Дужка очков",head,
-                    new Vector3(side*.083f,.143f,.078f),new Vector3(side*.092f,.123f,.006f),
-                    .006f,.006f,frame);
-                temple.transform.localRotation = Quaternion.Euler(0f,0f,-side*155.8f) *
-                    Quaternion.Euler(-73.1f,0f,0f);
-                Form(PrimitiveType.Sphere,"Серебряная заклёпка очков",border.transform,
-                    side*.0325f,.011f,.008f,.0038f,.0030f,.0019f,silver);
+                ActorArt.Form(PrimitiveType.Sphere,"Ушная раковина",head,
+                    new Vector3(i*.082f,.103f,-.003f),new Vector3(.027f,.046f,.032f),skin);
+                ActorArt.Form(PrimitiveType.Sphere,"Углубление ушной раковины",head,
+                    new Vector3(i*.088f,.105f,.009f),new Vector3(.009f,.021f,.009f),earDepth);
+                ActorArt.Form(PrimitiveType.Sphere,"Тень под крылом носа",head,
+                    new Vector3(i*.011f,.094f,FaceAt(i*.011f,.094f)),
+                    new Vector3(.007f,.0023f,.0028f),noseShadow);
             }
-
-            for (var i=0;i<2;i++)
-            {
-                float side = i == 0 ? -1f : 1f;
-                shoulders[i] = ActorArt.Joint("Shoulder "+i,body,new Vector3(side*.190f,.409f,0));
-                elbows[i] = ActorArt.Joint("Elbow "+i,shoulders[i],new Vector3(0,-.257f,0));
-                AvatarCloth.Sleeve(shoulders[i],elbows[i],side,jacket);
-                Form(PrimitiveType.Sphere,"Кисть",elbows[i],0,-.258f,.007f,.062f,.068f,.047f,skin);
-                for (int f=0;f<4;f++)
-                    Form(PrimitiveType.Sphere,"Палец",elbows[i],-.019f+f*.0126f,
-                        -.286f-(f==1||f==2?.005f:0f),.012f,.014f,.043f,.022f,skin);
-                Form(PrimitiveType.Sphere,"Большой палец",elbows[i],-side*.025f,-.262f,.022f,
-                    .018f,.048f,.025f,skin);
-
-                hips[i] = ActorArt.Joint("Hip "+i,body,new Vector3(side*.083f,-.012f,0f));
-                knees[i] = ActorArt.Joint("Knee "+i,hips[i],new Vector3(0,-.406f,0));
-                AvatarCloth.Jeans(hips[i],knees[i],side,pants);
-                ankles[i] = ActorArt.Joint("Ankle "+i,knees[i],new Vector3(0,-.410f,0));
-                AvatarFootwear.Build(ankles[i],side,rubber,shoeGrey,shoeWhite);
-            }
-            box = ActorArt.Form(PrimitiveType.Cube,"Carried parcel",body,new Vector3(0,.078f,.350f),
-                new Vector3(.365f,.285f,.335f),ActorArt.Paint(new Color(.55f,.368f,.176f)));
-            ActorArt.Form(PrimitiveType.Cube,"Packing tape",box.transform,new Vector3(0,.505f,0),
-                new Vector3(.17f,.015f,1.005f),ActorArt.Paint(new Color(.71f,.519f,.24f)));
-            phone = ActorArt.Form(PrimitiveType.Cube,"Phone",elbows[1],new Vector3(0,-.24f,.04f),
-                new Vector3(.06f,.102f,.015f),ActorArt.Paint(new Color(.18f,.21f,.28f),.75f));
-            box.SetActive(false);
-            phone.SetActive(false);
         }
 
         public void SetFirstPerson(bool active)
@@ -382,7 +352,7 @@ namespace LifeCraftRP
             stepAmount = Mathf.MoveTowards(stepAmount,grounded ? Mathf.Clamp01(speed/2f) : 0f,dt*8f);
             phase += dt*Mathf.Lerp(5.7f,13.5f,Mathf.Clamp01(animationSpeed/7.2f));
             float stride = Mathf.Lerp(21f,54f,Mathf.Clamp01(animationSpeed/7.2f))*stepAmount;
-            float idle = Mathf.Sin(Time.time*2.65f)*.008f;
+            float idle = Mathf.Sin(Time.time*1.31f)*.0022f;
             float crouchHeight = crouched ? .57f : .95f;
             float height = driving ? .41f : crouchHeight + Mathf.Abs(Mathf.Sin(phase))*stepAmount*.042f + idle - landAmount;
             float bend = driving ? 8f : crouched ? 20f : 4f+animationSpeed*1.3f;
@@ -391,6 +361,8 @@ namespace LifeCraftRP
             float attack = Mathf.Clamp01((punchUntil-Time.time)/.44f);
             attack = Mathf.Sin(attack*Mathf.PI);
             float boarding = Mathf.Clamp01((enterUntil-Time.time)/.42f);
+            bool relaxed = grounded && animationSpeed < .30f && !crouched && !driving &&
+                !carrying && !onPhone && work < .02f && attack < .02f && boarding < .02f;
             body.localPosition = Vector3.Lerp(body.localPosition,new Vector3(0,height,0),dt*16f);
             body.localRotation = Quaternion.Euler(bend+work*22f,attack*21f,boarding*12f);
             head.localRotation = Quaternion.Euler(-bend*.58f-work*13f,boarding*21f,0);
@@ -418,8 +390,10 @@ namespace LifeCraftRP
                 Pose(hips[i],Quaternion.Euler(hip,0f,side*2f),softness);
                 Pose(knees[i],Quaternion.Euler(knee,0f,0f),softness);
                 Pose(ankles[i],Quaternion.Euler(Mathf.Clamp(-hip-knee,-28f,28f),side*2f,0f),softness);
-                Pose(shoulders[i],Quaternion.Euler(shoulder,-side*12f,side*(carrying ? 14f : 7f)),softness);
-                Pose(elbows[i],Quaternion.Euler(elbow,0f,0f),softness);
+                Pose(shoulders[i],relaxed ? Quaternion.Euler(-2.8f,-side*5f,side*5f) :
+                    Quaternion.Euler(shoulder,-side*12f,side*(carrying ? 14f : 7f)),softness);
+                Pose(elbows[i],relaxed ? Quaternion.Euler(-23f,side*4f,-side*21f) :
+                    Quaternion.Euler(elbow,0f,0f),softness);
             }
         }
 
@@ -442,7 +416,7 @@ namespace LifeCraftRP
             else if (speed > 5.1f) state = "Sprint";
             else if (speed > 2.8f) state = "Run";
             else if (speed > .30f) state = "Walk";
-            else state = "Idle";
+            else state = Animator.HasState(0,RelaxedIdle) ? "Relaxed Idle" : "Idle";
             if (currentState == state)
                 return;
             currentState = state;

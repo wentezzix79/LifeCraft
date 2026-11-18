@@ -10,11 +10,28 @@ namespace LifeCraftRP
         private readonly Dictionary<string,Material> materials;
         private readonly Dictionary<string,Geometry> groups = new Dictionary<string,Geometry>();
         private readonly System.Random variation = new System.Random(24851);
+        private readonly Font signFont;
 
         internal StreetScenery(Transform parent,Dictionary<string,Material> materials)
         {
             this.parent=parent;
             this.materials=materials;
+            signFont=Resources.Load<Font>("Art/DejaVuSans");
+            AddTint("oxideSign","eave",new Color(.43f,.125f,.089f));
+            AddTint("signFace","navy",new Color(.075f,.24f,.32f));
+            AddTint("birchPale","windowFrame",new Color(.78f,.75f,.66f));
+            AddTint("birchKnot","bark",new Color(.17f,.16f,.14f));
+            AddTint("panelJoint","facadeBand",new Color(.40f,.37f,.33f));
+            AddTint("paverTone","paving",new Color(.69f,.64f,.59f));
+            AddTint("aluminium","railMetal",new Color(.53f,.54f,.53f));
+        }
+
+        private void AddTint(string key,string source,Color tint)
+        {
+            var material=new Material(materials[source]) {name="LC · "+key,color=tint};
+            if (material.HasProperty("_BaseColor"))
+                material.SetColor("_BaseColor",tint);
+            materials[key]=material;
         }
 
         internal void Build()
@@ -47,6 +64,8 @@ namespace LifeCraftRP
             }
             Facade(-87,10,17,11,5,2);
             Facade(-66,16,17,11,4,4);
+            GroundFloorRetail(-66,10.28f);
+            ServiceFronts();
 
             const float west=-119f;
             for (int i=0;i<15;i++)
@@ -77,6 +96,7 @@ namespace LifeCraftRP
             for(int i=0;i<8;i++)
                 StreetLamp(-101+i*27.7f,-26.4f);
             BusShelter(-15.3f,-26.3f);
+            Wayfinding();
             Bench(-9,-20.6f);
             Bench(-21,-19.5f);
             Bench(-60,-17.4f);
@@ -110,6 +130,7 @@ namespace LifeCraftRP
             Box("eave",x,height+.06f,z,width+.28f,.24f,depth+.27f);
             Box("roof",x+width*.22f,height+.66f,z-1.7f,2.15f,1.1f,2.6f);
             Box("eave",x+width*.22f,height+1.25f,z-1.7f,2.24f,.17f,2.72f);
+            RoofDetails(x,z,width,depth,height,style);
             AddCollision(x,height*.5f,z,width,height,depth);
             int bays=Mathf.FloorToInt(width/2.42f);
             for(int facing=-1;facing<=1;facing+=2)
@@ -118,26 +139,29 @@ namespace LifeCraftRP
                 for(int floor=0;floor<floors;floor++)
                 {
                     float y=1.64f+floor*2.73f;
-                    Box("facadeBand",x,y+.97f,face+facing*.025f,width,.038f,.07f);
+                    if (style%3!=1)
+                        Box("panelJoint",x,y+1.25f,face+facing*.008f,width,.036f,.026f);
+                    if (floor!=0 && (style%3==0 || floor%2==0))
+                        Box("facadeBand",x,y-.97f,face+facing*.022f,width,.067f,.064f);
                     for(int b=0;b<bays;b++)
                     {
                         float xx=x-width*.5f+(b+.5f)*width/bays;
                         bool entrance=floor==0 && b==bays/2;
                         if(entrance)
                         {
-                            Box("railMetal",xx,1.21f,face+facing*.05f,1.47f,2.38f,.10f);
-                            Box("glassDeep",xx,1.59f,face+facing*.11f,.99f,.71f,.035f);
-                            Box("eave",xx,2.6f,face+facing*.51f,2.23f,.14f,1.1f);
+                            ResidenceEntry(xx,face,facing,style);
                             continue;
                         }
                         string glass=(b+floor*3+style)%6==0?"glassWarm":
                             (b+style+floor)%2==0?"glassBlue":"glassDeep";
-                        Box("railMetal",xx,y,face+facing*.061f,1.38f,1.39f,.099f);
-                        Box(glass,xx,y,face+facing*.122f,1.22f,1.22f,.028f);
-                        Box("windowFrame",xx,y,face+facing*.146f,.042f,1.22f,.029f);
-                        Box("windowFrame",xx,y-.68f,face+facing*.194f,1.55f,.089f,.38f);
+                        Window(xx,y,face,facing,glass,(b+style)%3);
                         if(floor>0 && (style+b)%4==0)
-                            Balcony(xx,y,face,facing);
+                            Balcony(xx,y,face,facing,(floor+b+style)%4);
+                        else if (floor>0 && (floor*3+b+style)%11==0)
+                            AirConditioner(xx+.75f,y-.41f,face,facing);
+                        if (style%3!=1 && floor>0 && b<bays-1 && (b+floor+style)%3!=1)
+                            Box("panelJoint",xx+width/(bays*2f),y+.03f,
+                                face+facing*.012f,.023f,2.63f,.019f);
                     }
                 }
             }
@@ -156,13 +180,210 @@ namespace LifeCraftRP
             }
         }
 
-        private void Balcony(float x,float y,float z,int side)
+        private void Window(float x,float y,float z,int facing,string glass,int layout)
+        {
+            float width = layout==2 ? 1.18f : 1.42f;
+            Box("railMetal",x,y,z+facing*.044f,width,1.41f,.094f);
+            Box(glass,x,y,z+facing*.102f,width-.11f,1.28f,.032f);
+            for (int side=-1;side<=1;side+=2)
+            {
+                Box("windowFrame",x+side*(width*.5f-.043f),y,z+facing*.125f,.053f,1.31f,.030f);
+                Box("windowFrame",x,y+side*.638f,z+facing*.128f,width-.052f,.052f,.031f);
+            }
+            Box("windowFrame",x+(layout==1 ? -.19f : .035f),y,z+facing*.129f,
+                .043f,1.25f,.028f);
+            if (layout!=2)
+                Box("windowFrame",x,y+.29f,z+facing*.131f,width-.11f,.035f,.028f);
+            Box("border",x,y-.68f,z+facing*.179f,width+.11f,.077f,.32f);
+        }
+
+        private void ResidenceEntry(float x,float z,int facing,int style)
+        {
+            string tile = style%2==0 ? "border" : "panelSand";
+            Box(tile,x,1.36f,z+facing*.055f,2.14f,2.68f,.12f);
+            Box("railMetal",x,1.21f,z+facing*.135f,1.46f,2.36f,.070f);
+            Box("glassDeep",x-.23f,1.57f,z+facing*.178f,.48f,.86f,.035f);
+            Box("glassDeep",x+.23f,1.57f,z+facing*.178f,.48f,.86f,.035f);
+            Box("aluminium",x,1.15f,z+facing*.197f,.034f,.29f,.05f);
+            Box("border",x,.11f,z+facing*.65f,2.28f,.22f,1.38f);
+            Box("panelIvory",x,2.65f,z+facing*.55f,2.47f,.14f,1.19f);
+            Box("railMetal",x,2.54f,z+facing*1.105f,2.36f,.049f,.053f);
+            Box("signFace",x+.87f,2.27f,z+facing*.144f,.27f,.24f,.026f);
+            Box("light",x,2.51f,z+facing*.47f,.34f,.035f,.17f);
+        }
+
+        private void Balcony(float x,float y,float z,int side,int variant)
         {
             Box("border",x,y-.78f,z+side*.55f,2.01f,.145f,1.08f);
-            Box("railMetal",x,y+.11f,z+side*1.06f,1.94f,.057f,.064f);
-            Box("balconyPanel",x,y-.38f,z+side*1.04f,1.85f,.62f,.065f);
-            for(int i=-1;i<=1;i+=2)
-                Box("railMetal",x+i*.95f,y-.32f,z+side*1.04f,.052f,.83f,.052f);
+            if (variant<2)
+            {
+                Box(variant==0?"glassBlue":"glassDeep",x,y+.031f,z+side*1.066f,1.91f,1.56f,.048f);
+                Box("balconyPanel",x,y-.42f,z+side*1.095f,1.93f,.57f,.051f);
+                Box("windowFrame",x,y+.86f,z+side*.60f,2.03f,.07f,1.02f);
+                for(int i=-1;i<=1;i++)
+                    Box("windowFrame",x+i*.92f,y+.29f,z+side*1.11f,.048f,1.02f,.05f);
+                Box("windowFrame",x,y+.54f,z+side*1.117f,1.94f,.047f,.048f);
+                for (int f=-1;f<=1;f+=2)
+                {
+                    Box("balconyPanel",x+f*.973f,y-.43f,z+side*.65f,.047f,.61f,.83f);
+                    Box("glassBlue",x+f*.973f,y+.30f,z+side*.65f,.046f,.83f,.83f);
+                }
+            }
+            else
+            {
+                Box("railMetal",x,y+.11f,z+side*1.06f,1.94f,.057f,.064f);
+                Box("balconyPanel",x,y-.39f,z+side*1.04f,1.85f,.62f,.065f);
+                for(int i=-1;i<=1;i+=2)
+                {
+                    Box("railMetal",x+i*.95f,y-.32f,z+side*1.04f,.052f,.83f,.052f);
+                    Box("railMetal",x+i*.95f,y+.11f,z+side*.56f,.044f,.046f,.98f);
+                }
+            }
+        }
+
+        private void AirConditioner(float x,float y,float z,int facing)
+        {
+            Box("panelIvory",x,y,z+facing*.27f,.54f,.37f,.28f);
+            Box("eave",x,y,z+facing*.419f,.43f,.23f,.021f);
+            for(int vane=0;vane<4;vane++)
+                Box("aluminium",x,y-.083f+vane*.054f,z+facing*.435f,.397f,.015f,.015f);
+        }
+
+        private void RoofDetails(float x,float z,float width,float depth,float height,int style)
+        {
+            for(int side=-1;side<=1;side+=2)
+            {
+                Box("panelSand",x,height+.31f,z+side*(depth*.5f-.06f),width+.08f,.44f,.18f);
+                Box("eave",x,height+.55f,z+side*(depth*.5f-.06f),width+.12f,.065f,.23f);
+                Box("panelSand",x+side*(width*.5f-.08f),height+.31f,z,.185f,.44f,depth);
+            }
+            for(int i=0;i<2;i++)
+            {
+                float tower=x-width*.32f+i*width*.41f;
+                Box("panelSand",tower,height+.38f,z+.80f+i*1.22f,.78f,.72f,.65f);
+                Box("eave",tower,height+.77f,z+.80f+i*1.22f,.87f,.105f,.74f);
+            }
+            if (style%2==0)
+            {
+                float mastX=x+width*.21f,mastZ=z-1.75f;
+                Tube("railMetal",new Vector3(mastX,height+1.25f,mastZ),
+                    new Vector3(mastX,height+2.89f,mastZ),.023f,.016f);
+                Box("railMetal",mastX,height+2.74f,mastZ,1.16f,.031f,.036f);
+                for(int i=-1;i<=1;i++)
+                    Box("railMetal",mastX+i*.39f,height+2.74f,mastZ,.027f,.029f,.52f);
+            }
+        }
+
+        private void ServiceFronts()
+        {
+            // Store geometry stays outside the real window and door collision planes.
+            Pavement(49,.115f,-8.30f,19.66f,.15f,2.65f);
+            Box("border",41.79f,.24f,-7.21f,5.58f,.40f,.13f);
+            Box("border",53.21f,.24f,-7.21f,11.58f,.40f,.13f);
+            Box("oxideSign",49,3.82f,-7.296f,19.95f,.84f,.20f);
+            Box("eave",49,4.29f,-7.525f,20.14f,.13f,.67f);
+            Sign("ЛАВКА У ДОМА",49,3.91f,-7.409f,.167f);
+            Sign("ПРОДУКТЫ  •  ЕЖЕДНЕВНО",49,3.64f,-7.411f,.059f);
+            float left=48.595f,right=57.82f,width=right-left;
+            Box("railMetal",(left+right)*.5f,2.877f,-7.219f,width,.094f,.11f);
+            Box("railMetal",(left+right)*.5f,.747f,-7.219f,width,.094f,.11f);
+            Box("windowFrame",(left+right)*.5f,2.394f,-7.231f,width,.041f,.082f);
+            for(int pane=0;pane<=4;pane++)
+                Box("railMetal",Mathf.Lerp(left,right,pane/4f),1.81f,-7.22f,.079f,2.22f,.114f);
+            Portal(46,-7,2.85f,"railMetal");
+            Box("signFace",50.17f,1.062f,-7.255f,.77f,.325f,.053f);
+            Sign("ОТКРЫТО",50.17f,1.066f,-7.288f,.059f);
+
+            // Canopy finishes leave ample headroom and do not intrude in door swings.
+            Portal(-27,2,2.85f,"aluminium");
+            Box("eave",-27,3.13f,1.26f,4.50f,.19f,1.72f);
+            Box("oxideSign",-27,3.095f,.385f,4.49f,.12f,.062f);
+            Box("light",-27,3.023f,1.23f,2.94f,.040f,.38f);
+            for (int i=0;i<11;i++)
+            {
+                float x=-51+i*4.19f;
+                if(Mathf.Abs(x+27)<3.0f)
+                    continue;
+                Box("facadeBand",x,4.46f,1.794f,.055f,3.60f,.043f);
+            }
+            Box("aluminium",-30,6.32f,1.76f,44.30f,.108f,.135f);
+            Portal(51,-25.5f,2.85f,"aluminium");
+            Box("aluminium",53,3.16f,-26.063f,20.92f,.128f,1.22f);
+            Box("eave",53,3.08f,-26.57f,20.95f,.076f,.15f);
+            for(int i=0;i<3;i++)
+            {
+                float x=55.1f+i*2.6f;
+                Box("railMetal",x,1.60f,-25.705f,2.34f,2.17f,.12f);
+                Box(i%2==0?"glassBlue":"glassDeep",x,1.65f,-25.784f,2.18f,2.00f,.039f);
+                Box("aluminium",x,1.65f,-25.809f,.063f,2.01f,.046f);
+            }
+            Portal(55,25.5f,2.85f,"border");
+            Box("eave",55,2.984f,24.96f,3.80f,.125f,1.26f);
+        }
+
+        private void Portal(float x,float z,float height,string finish)
+        {
+            for(int side=-1;side<=1;side+=2)
+                Box(finish,x+side*1.30f,height*.49f,z-.22f,.19f,height*.96f,.19f);
+            Box(finish,x,height-.008f,z-.215f,2.78f,.128f,.21f);
+        }
+
+        private void GroundFloorRetail(float x,float z)
+        {
+            Box("panelSand",x,1.57f,z,16.93f,3.14f,.128f);
+            Box("oxideSign",x,2.90f,z-.112f,16.82f,.54f,.144f);
+            Box("eave",x,3.211f,z-.163f,17.02f,.12f,.294f);
+            Sign("ПЕКАРНЯ  •  КОФЕ",x,2.922f,z-.194f,.126f);
+            for(int bay=-3;bay<=3;bay++)
+            {
+                float xpos=x+bay*2.26f;
+                Box("railMetal",xpos,1.37f,z-.097f,1.97f,2.12f,.095f);
+                Box(bay%2==0?"glassDeep":"glassWarm",xpos,1.52f,z-.158f,1.84f,
+                    bay==0?1.84f:1.62f,.044f);
+                Box("windowFrame",xpos,1.52f,z-.193f,.061f,1.63f,.041f);
+                Box("aluminium",xpos,2.30f,z-.192f,1.84f,.039f,.039f);
+            }
+        }
+
+        private void Wayfinding()
+        {
+            Vector3 stop=new Vector3(-18.02f,.21f,-25.35f);
+            Tube("railMetal",stop,stop+Vector3.up*3.04f,.036f,.031f);
+            Box("signFace",stop.x,3.08f,stop.z,.57f,.53f,.069f);
+            Box("navy",stop.x,3.08f,stop.z-.042f,.426f,.397f,.021f);
+            Sign("А",stop.x,3.082f,stop.z-.062f,.115f);
+            Box("railMetal",-13.48f,1.50f,-25.37f,1.16f,2.35f,.13f);
+            Box("signFace",-13.48f,1.60f,-25.451f,.99f,1.88f,.024f);
+            Sign("ОМСК", -13.48f,2.15f,-25.473f,.105f);
+            Sign("ГОРОДСКОЙ МАРШРУТ", -13.48f,1.83f,-25.474f,.043f);
+            for(int i=0;i<3;i++)
+                Box("windowFrame",-13.48f,1.62f-i*.17f,-25.47f,.60f-i*.075f,.032f,.018f);
+            for(int i=0;i<3;i++)
+            {
+                float x=-21.5f+i*1.14f;
+                Box("paverTone",x,.153f,-25.72f,.78f,.069f,.57f);
+                for(int row=0;row<3;row++)
+                for(int col=0;col<5;col++)
+                    Box("border",x-.262f+col*.132f,.195f,-25.876f+row*.156f,.070f,.023f,.079f);
+            }
+        }
+
+        private void Sign(string label,float x,float y,float z,float scale)
+        {
+            if (!signFont)
+                return;
+            var obj=new GameObject("Вывеска · "+label,typeof(TextMesh));
+            obj.transform.SetParent(parent,false);
+            obj.transform.localPosition=new Vector3(x,y,z);
+            var text=obj.GetComponent<TextMesh>();
+            text.font=signFont;
+            text.text=label;
+            text.fontSize=52;
+            text.characterSize=scale;
+            text.color=new Color(.93f,.92f,.87f);
+            text.anchor=TextAnchor.MiddleCenter;
+            text.alignment=TextAlignment.Center;
+            obj.GetComponent<MeshRenderer>().sharedMaterial=signFont.material;
         }
 
         private void BusShelter(float x,float z)
@@ -199,8 +420,12 @@ namespace LifeCraftRP
         {
             Vector3 bottom=new Vector3(x,.1f,z);
             Vector3 joint=bottom+new Vector3(.08f,3.36f*s,.08f);
-            Tube("bark",bottom,joint,.17f*s,.073f*s);
-            Tube("bark",joint,joint+new Vector3(.12f,1.40f,.04f)*s,.073f*s,.024f*s);
+            bool birch=Mathf.Abs(Mathf.RoundToInt(x*1.31f+z*.9f))%4<2;
+            string bark=birch?"birchPale":"bark";
+            Tube(bark,bottom,joint,.17f*s,.073f*s);
+            Tube(bark,joint,joint+new Vector3(.12f,1.40f,.04f)*s,.073f*s,.024f*s);
+            if (birch)
+                BirchScars(bottom,joint,.17f*s,.073f*s);
             for(int i=0;i<7;i++)
             {
                 float a=i*2.4f+(float)variation.NextDouble()*.9f;
@@ -208,13 +433,35 @@ namespace LifeCraftRP
                 float r=(.75f+(float)variation.NextDouble()*.6f)*s;
                 Vector3 branchStart=joint-Vector3.up*(.26f+(i%3)*.23f)*s;
                 Vector3 crown=joint+branch*r+Vector3.up*(.27f+i*.23f)*s;
-                Tube("bark",branchStart,crown,.059f*s,.016f*s);
+                Tube(bark,branchStart,crown,.059f*s,.016f*s);
                 Crown(i%3==0?"leavesShade":i%3==1?"leavesMoss":"leavesTop",crown,
                       new Vector3(1.17f,1.31f,1.12f)*s,6,11);
                 Crown(i%2==0?"leavesMoss":"leavesTop",crown+branch*.62f*s+Vector3.up*.33f*s,
                       new Vector3(.69f,.81f,.65f)*s,5,9);
             }
             Crown("leavesTop",joint+Vector3.up*2.02f*s,new Vector3(1.03f,1.23f,.99f)*s,6,11);
+        }
+
+        private void BirchScars(Vector3 start,Vector3 end,float lower,float upper)
+        {
+            Geometry geometry=Get("birchKnot");
+            Vector3 axis=(end-start).normalized;
+            Vector3 radial=Vector3.Cross(axis,Vector3.forward).normalized;
+            Vector3 tangent=Vector3.Cross(radial,axis);
+            for(int i=0;i<17;i++)
+            {
+                float t=.073f+i*.049f;
+                float angle=i*2.4f+(float)variation.NextDouble()*.8f;
+                Vector3 from=(radial*Mathf.Cos(angle)+tangent*Mathf.Sin(angle));
+                Vector3 across=(radial*Mathf.Cos(angle+.57f)+tangent*Mathf.Sin(angle+.57f));
+                float radius=Mathf.Lerp(lower,upper,t)+.006f;
+                var anchor=Vector3.Lerp(start,end,t);
+                var a=anchor+from*radius;
+                var b=anchor+across*radius;
+                var c=b+axis*(.040f+.019f*(i%3));
+                var d=a+axis*(.027f+.014f*(i%2));
+                geometry.Quad(a,b,c,d);
+            }
         }
 
         private void Crown(string style,Vector3 center,Vector3 radii,int rows,int sides)
@@ -229,11 +476,11 @@ namespace LifeCraftRP
                 for(int i=0;i<=sides;i++)
                 {
                     float a=Mathf.PI*2f*i/sides;
-                    float variation=1f+.17f*Mathf.Sin(a*4+row*1.5f+seed)
-                        +.085f*Mathf.Cos(a*7-row*1.43f-seed);
+                    float variation=1f+.10f*Mathf.Sin(a*4+row*1.5f+seed)
+                        +.045f*Mathf.Cos(a*7-row*1.43f-seed);
                     var v=new Vector3(Mathf.Cos(a)*r*radii.x,h*radii.y,Mathf.Sin(a)*r*radii.z)*variation;
                     g.Points.Add(center+v);
-                    g.UV.Add(new Vector2(i/(float)sides,row/(float)rows));
+                    g.UV.Add(new Vector2(i*2f/sides+seed,row/(float)rows+seed*.62f));
                     if (row==0 || i==sides) continue;
                     int p=offset+(row-1)*(sides+1)+i;
                     g.Face(p,p+sides+1,p+sides+2,p+1);

@@ -3,159 +3,174 @@ using UnityEngine;
 
 namespace LifeCraftRP
 {
-    /// <summary>Close-fitting dark roots with layered ringlets, finer strands and a swept fringe.</summary>
     internal static class AvatarHair
     {
         private const float Turn = 2f * Mathf.PI;
-        private const float Crown = .166f;
-        private static readonly Vector3 Ellipsoid = new Vector3(.086f,.093f,.094f);
+        private const float Crown = .161f;
+        private static readonly Vector3 Ellipsoid = new Vector3(.092f,.100f,.105f);
 
         internal static void Build(Transform head, Material roots, Material curls, Material highlights)
         {
             BuildCap(head,roots);
             var vertices = new[] { new List<Vector3>(), new List<Vector3>(), new List<Vector3>() };
             var faces = new[] { new List<int>(), new List<int>(), new List<int>() };
-            int[] counts = { 8, 13, 17, 23, 26 };
+            int[] counts = { 7, 11, 16, 18, 21 };
             for (int row = 0; row < counts.Length; row++)
             for (int i = 0; i < counts[row]; i++)
             {
-                float key = 19.13f * (i + 1) + 7.22f * row;
-                float azimuth = (i + row*.391f + .35f*Mathf.Sin(key*.31f)) * Turn / counts[row];
-                float f = Mathf.Max(0f,Mathf.Sin(azimuth));
-                float t = .103f + .195f*row + .046f*Mathf.Sin(key);
-                float polar = t * HairlineAngle(azimuth);
+                float seed = 17.31f * (i + 1) + 11.25f * row;
+                float azimuth = (i + row*.407f + .37f*Mathf.Sin(seed*.43f)) * Turn / counts[row];
+                float polar = (.11f + .188f*row + .045f*Mathf.Sin(seed)) * HairlineAngle(azimuth);
                 Vector3 root = Shell(azimuth,polar);
-                Vector3 normal = new Vector3(Mathf.Cos(azimuth)*Mathf.Sin(polar),Mathf.Cos(polar),
-                    Mathf.Sin(azimuth)*Mathf.Sin(polar)).normalized;
+                Vector3 normal = ShellNormal(azimuth,polar);
                 Vector3 across = new Vector3(-Mathf.Sin(azimuth),0f,Mathf.Cos(azimuth));
                 Vector3 along = Vector3.Cross(normal,across).normalized;
-                float width = .0085f + .0047f*Mathf.Cos(key*.81f);
-                float length = .019f + .007f*Mathf.Sin(key*.67f);
-                float direction = Mathf.Sin(key*.37f) > -.25f ? 1f : -1f;
-                float sweep = .018f + .009f*Mathf.Cos(key*.337f);
-                float fall = row == 4 ? .009f*f*(1f+.4f*Mathf.Sin(key)) : 0f;
-                int tint = (i+row*4)%13 == 0 ? 2 : (i+row)%7 == 0 ? 0 : 1;
+                float width = .011f + .0037f*Mathf.Sin(seed*.68f);
+                float length = .019f + .009f*Mathf.Sin(seed*.59f);
+                float turn = (Mathf.Sin(seed*.21f) > -.15f ? 1f : -1f) * (4.7f + 1.2f*Mathf.Sin(seed*.82f));
+                float bias = .007f + .005f*Mathf.Cos(seed*.57f);
+                float start = seed*.32f;
+                float endLift = .001f + .005f*Mathf.Cos(seed*.91f);
+                int tint = (i+2*row)%11 == 0 ? 2 : (i+row)%5 == 0 ? 0 : 1;
 
-                Vector3 Path(float u, float thread)
+                Vector3 Path(float t, float strand)
                 {
-                    float coil = key + u*direction*(Turn*(.63f+.30f*Mathf.Sin(key*.37f)));
-                    float curlSize = (.62f+.43f*Mathf.Sin(Mathf.PI*u))*(1f-.26f*u);
-                    float floatHeight = -.0039f + (.0083f+width*.26f)*Mathf.Sin(Mathf.PI*u*.91f);
-                    return root + normal*(floatHeight + .0003f*thread)
-                        + across*(width*curlSize*Mathf.Cos(coil) + u*sweep + thread*.0034f)
-                        + along*(width*curlSize*Mathf.Sin(coil)*.88f + length*(u-.23f))
-                        + Vector3.up*(-fall*u*u);
+                    float angle = start + turn*t;
+                    float arc = Mathf.Sin(Mathf.PI*t);
+                    float size = (.75f+.25f*arc)*(1f-.25f*t);
+                    return root + normal*(-.004f + (.009f+width*.30f)*arc + endLift*t + strand*.0008f)
+                        + across*(width*size*(Mathf.Cos(angle)-Mathf.Cos(start)) + bias*t + strand*.0032f)
+                        + along*(width*size*(Mathf.Sin(angle)-Mathf.Sin(start)) + length*t);
                 }
-                AddStrand(vertices[tint], faces[tint], u => Path(u,0f),
-                    normal,.0031f+.00058f*Mathf.Cos(key),13,5,0);
-                if ((i+row)%3 != 0)
-                {
-                    int threadTint = tint == 1 && (i+row)%4 == 0 ? 2 : 1;
-                    float side = i%2 == 0 ? -.86f : .83f;
-                    AddStrand(vertices[threadTint],faces[threadTint],u => Path(u,side),
-                        normal,.00145f,11,4,1);
-                }
+
+                AddStrand(vertices[tint],faces[tint],t => Path(t,0),normal,.0043f,18,6);
+                int threadTint = tint == 0 || (i+row)%4 == 0 ? 1 : 2;
+                AddStrand(vertices[threadTint],faces[threadTint],t => Path(t,-.83f),normal,.0020f,16,5);
+                if ((i+row)%3 == 0)
+                    AddStrand(vertices[0],faces[0],t => Path(t,1.15f),normal,.0017f,14,5);
             }
+
             AddFringe(vertices,faces);
             Material[] shades = { roots,curls,highlights };
             for (int i = 0; i < shades.Length; i++)
-                ActorArt.Custom("Кудрявые волосы · слой "+(i + 1),head,vertices[i],faces[i],shades[i]);
+                ActorArt.Custom("Волосы · кудри " + (i + 1),head,vertices[i],faces[i],shades[i]);
         }
 
         private static void AddFringe(List<Vector3>[] vertices,List<int>[] faces)
         {
-            // Extra swept locks at the forehead use custom guides to lie above the temples and lenses.
-            for (int i=0;i<11;i++)
+            for (int i=0;i<12;i++)
             {
-                float id = i;
-                float x = -.073f + id*.0128f + .0034f*Mathf.Sin(id*4.37f);
-                float y = .195f + .013f*Mathf.Cos((id-4f)*.41f) + .0038f*Mathf.Sin(id*3.11f);
-                float z = .081f - .009f*Mathf.Abs(x)/.074f;
-                float sweep = .013f + .0036f*Mathf.Sin(id*6.7f);
-                float hang = .029f+.011f*Mathf.Sin(id*2.74f) + .0046f*Mathf.Cos(id*.53f);
-                float offset = .0055f+.0016f*Mathf.Cos(id*3.71f);
-                float theta = id*.87f;
-                float twist = (i%3==1 ? -1f : 1f)*(4.4f+.51f*Mathf.Sin(id));
-                int tint = i%5==2 ? 2 : 1;
-                Vector3 Guide(float u, float separation)
+                float key = 6.91f*i;
+                float x = -.082f + .0143f*i + .0045f*Mathf.Sin(key);
+                float y = .204f + .011f*Mathf.Cos((i-5f)*.29f) + .0048f*Mathf.Sin(key*.71f);
+                float z = .081f - .018f*Mathf.Abs(x)/.082f;
+                float hang = .041f + .016f*Mathf.Sin(key*.62f) + (i==4 || i==8 ? .011f : 0);
+                float loop = .0075f + .0035f*Mathf.Sin(key*.53f);
+                float sweep = .012f + .008f*Mathf.Sin(key*.34f);
+                float twist = (i%3 == 1 ? -1f : 1f) * (5.0f + .75f*Mathf.Sin(key*.95f));
+
+                Vector3 Guide(float t, float strand)
                 {
-                    float size = Mathf.Sin(Mathf.PI*u);
-                    float angle = theta + twist*u;
+                    float lift = Mathf.Sin(Mathf.PI*t);
+                    float a = key + twist*t;
                     return new Vector3(
-                        x+sweep*u+offset*size*Mathf.Cos(angle)+separation,
-                        y-hang*u+offset*.78f*size*Mathf.Sin(angle),
-                        z+.015f*size+.0103f*u+.0037f*size*Mathf.Sin(angle+.67f));
+                        x+sweep*t+loop*lift*Mathf.Cos(a)+strand*.0035f,
+                        y-hang*t+loop*.92f*lift*Mathf.Sin(a),
+                        z+.027f*lift+.015f*t+.004f*lift*Mathf.Sin(a+.56f)+strand*.001f);
                 }
-                AddStrand(vertices[tint],faces[tint],u => Guide(u,0f),
-                    new Vector3(0,0,1),.0039f,16,6,0);
-                AddStrand(vertices[1],faces[1],u => Guide(u,-.0031f),
-                    new Vector3(0,0,1),.0017f,13,4,1);
+
+                Vector3 normal = Vector3.forward;
+                AddStrand(vertices[1],faces[1],t => Guide(t,0),normal,.0045f,22,6);
+                AddStrand(vertices[i%4 == 1 ? 1 : 2],faces[i%4 == 1 ? 1 : 2],
+                    t => Guide(t,-.76f),normal,.0020f,18,5);
+                AddStrand(vertices[0],faces[0],t => Guide(t,1.05f),normal,.0017f,16,5);
             }
         }
 
         private static float HairlineAngle(float azimuth)
         {
             float front = Mathf.Sin(azimuth);
-            return 1.75f - .48f*front + .045f*Mathf.Sin(3f*azimuth) + .040f*Mathf.Cos(7f*azimuth);
+            return 1.84f - .53f*front + .045f*Mathf.Sin(5f*azimuth) + .038f*Mathf.Cos(9f*azimuth);
         }
 
         private static Vector3 Shell(float azimuth,float polar)
         {
+            Vector3 normal = ShellNormal(azimuth,polar);
+            float ripple = (.0039f*Mathf.Sin(12f*azimuth + 5.1f*polar)
+                + .0025f*Mathf.Cos(19f*azimuth - 7.3f*polar)
+                + .0015f*Mathf.Sin(31f*azimuth + 13.6f*polar))*Mathf.Sin(polar);
+            return new Vector3(Ellipsoid.x*normal.x,Crown+Ellipsoid.y*normal.y,
+                -.008f+Ellipsoid.z*normal.z)+normal*ripple;
+        }
+
+        private static Vector3 ShellNormal(float azimuth,float polar)
+        {
             float sp = Mathf.Sin(polar);
-            return new Vector3(Ellipsoid.x*sp*Mathf.Cos(azimuth),
-                Crown + Ellipsoid.y*Mathf.Cos(polar),
-                -.012f + Ellipsoid.z*sp*Mathf.Sin(azimuth));
+            return new Vector3(sp*Mathf.Cos(azimuth),Mathf.Cos(polar),sp*Mathf.Sin(azimuth));
         }
 
         private static void BuildCap(Transform head, Material roots)
         {
-            const int rows = 20, sides = 72;
-            var vertices = new List<Vector3>(rows*sides+1) { new Vector3(0f,Crown+Ellipsoid.y,-.012f) };
-            var faces = new List<int>();
+            const int rows = 28, sides = 80;
+            const int rowSize = sides+1;
+            var vertices = new List<Vector3>(rows*rowSize+1) { new Vector3(0,Crown+Ellipsoid.y,-.008f) };
+            var uv = new List<Vector2>(vertices.Capacity) { new Vector2(.5f,.01f) };
+            var faces = new List<int>(rows*sides*6);
             for (int ring=1;ring<=rows;ring++)
-            for (int i=0;i<sides;i++)
+            for (int i=0;i<=sides;i++)
             {
-                float angle = i*Turn/sides;
-                float polar = ring*HairlineAngle(angle)/rows;
-                Vector3 p = Shell(angle,polar);
-                float rootWave = .0017f*Mathf.Sin(19f*angle+ring*.94f)
-                    +.0014f*Mathf.Cos(33f*angle+ring*.53f);
-                float ripple = rootWave*Mathf.Sin(polar);
-                p.x += ripple*Mathf.Cos(angle);
-                p.y += ripple*.72f;
-                p.z += ripple*Mathf.Sin(angle);
-                vertices.Add(p);
-                int a=1+(ring-1)*sides+i;
-                int b=1+(ring-1)*sides+(i+1)%sides;
+                float azimuth = i*Turn/sides;
+                float y = ring/(float)rows;
+                vertices.Add(Shell(azimuth,y*HairlineAngle(azimuth)));
+                uv.Add(new Vector2(i/(float)sides,y));
+                if (i==sides)
+                    continue;
+                int a = 1+(ring-1)*rowSize+i;
+                int b = a+1;
                 if (ring==1)
                     faces.AddRange(new[]{0,b,a});
                 else
-                    faces.AddRange(new[]{a-sides,b-sides,b,a-sides,b,a});
+                    faces.AddRange(new[]{a-rowSize,b-rowSize,b,a-rowSize,b,a});
             }
-            ActorArt.Custom("Волосы · естественная линия роста",head,vertices,faces,roots);
+            Material detail = RootMaterial(roots);
+            ActorArt.Custom("Волосы · корни",head,vertices,faces,detail,uv);
+        }
+
+        private static Material rootMaterial;
+
+        private static Material RootMaterial(Material source)
+        {
+            if (rootMaterial)
+                return rootMaterial;
+            var fibers = Resources.Load<Texture2D>("Art/AvatarHairGrain");
+            if (!fibers)
+                return source;
+            rootMaterial = new Material(source) { name = "LC · Волосы", mainTexture = fibers };
+            return rootMaterial;
         }
 
         private static void AddStrand(List<Vector3> vertices,List<int> faces,
-            System.Func<float,Vector3> guide, Vector3 normal, float broadness,int steps,int sides,int narrow)
+            System.Func<float,Vector3> guide, Vector3 normal,float broadness,int steps,int sides)
         {
-            int offset=vertices.Count;
+            int offset = vertices.Count;
             for (int ring=0;ring<=steps;ring++)
             {
                 float t = ring/(float)steps;
-                Vector3 axis = (guide(Mathf.Min(1f,t+.013f))-guide(Mathf.Max(0f,t-.013f))).normalized;
+                Vector3 axis = (guide(Mathf.Min(1f,t+.014f))-guide(Mathf.Max(0f,t-.014f))).normalized;
                 Vector3 u = Vector3.Cross(axis,normal).normalized;
+                if (u.magnitude < .001f)
+                    u = Vector3.Cross(axis,Vector3.right).normalized;
                 Vector3 v = Vector3.Cross(axis,u).normalized;
-                float taper = 1f-.81f*t*t*t;
-                float thickness = (.0004f+broadness*Mathf.Sin(Mathf.PI*(.20f+t*.74f)))*taper;
+                float thickness = broadness*(.35f+.65f*Mathf.Sin(Mathf.PI*(.16f+t*.80f)))*(1f-.88f*t*t*t);
                 Vector3 position = guide(t);
                 for (int i=0;i<sides;i++)
                 {
-                    float angle=i*Turn/sides;
-                    vertices.Add(position+thickness*(Mathf.Cos(angle)*u+Mathf.Sin(angle)*v*(narrow==0?.76f:.68f)));
+                    float angle = i*Turn/sides;
+                    vertices.Add(position + thickness*(Mathf.Cos(angle)*u + .69f*Mathf.Sin(angle)*v));
                     if (ring == 0)
                         continue;
-                    int a = offset + (ring-1)*sides+i;
-                    int b = offset + (ring-1)*sides+(i+1)%sides;
+                    int a = offset+(ring-1)*sides+i;
+                    int b = offset+(ring-1)*sides+(i+1)%sides;
                     faces.AddRange(new[]{a,b,a+sides,b,b+sides,a+sides});
                 }
             }

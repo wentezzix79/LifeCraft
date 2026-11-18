@@ -4,6 +4,8 @@ using LifeCraft.World;
 using LifeCraftRP.Core;
 using UnityEngine;
 using UnityEngine.Rendering;
+using UnityEngine.Rendering.Universal;
+using ShadowResolution = UnityEngine.ShadowResolution;
 
 namespace LifeCraftRP
 {
@@ -29,7 +31,11 @@ namespace LifeCraftRP
         private Light sun;
         private Material skybox;
         private Material previousSkybox;
-        private float clockMinutes = 9 * 60 + 42;
+        private StreetColorGrade streetColorGrade;
+        private UniversalRenderPipelineAsset renderPipeline;
+        private RenderPipelineAsset previousQualityPipeline;
+        private float nextLightUpdate;
+        private float clockMinutes = 10 * 60 + 22;
         private float saveTimer;
         private Vector3 beforeOnline;
         private int quality;
@@ -132,8 +138,8 @@ namespace LifeCraftRP
             sun = obj.GetComponent<Light>();
             sun.type = LightType.Directional;
             sun.shadows = LightShadows.Soft;
-            sun.shadowBias = .045f;
-            sun.shadowNormalBias = .34f;
+            sun.shadowBias = .035f;
+            sun.shadowNormalBias = .28f;
             sun.shadowNearPlane = .20f;
             RenderSettings.sun = sun;
             RenderSettings.ambientMode = AmbientMode.Trilight;
@@ -165,7 +171,8 @@ namespace LifeCraftRP
             World.SetViewDistance(quality <= 1);
 
             bool mobile = Application.isMobilePlatform;
-            bool hdr = !mobile && quality >= 3;
+            bool hdr = quality >= (mobile ? 3 : 2) &&
+                SystemInfo.SupportsRenderTextureFormat(RenderTextureFormat.DefaultHDR);
             int requested = mobile ? profile.MobileSamples : profile.DesktopSamples;
             int samples = SupportedSamples(requested,hdr);
             if (hdr && samples == 1)
@@ -175,6 +182,7 @@ namespace LifeCraftRP
             }
             if (worldCamera != null)
             {
+                worldCamera.nearClipPlane = .10f;
                 worldCamera.farClipPlane = profile.ViewDistance;
                 worldCamera.allowDynamicResolution = false;
                 worldCamera.allowMSAA = samples > 1;
@@ -191,21 +199,32 @@ namespace LifeCraftRP
                 ? AnisotropicFiltering.Enable : AnisotropicFiltering.ForceEnable;
             QualitySettings.globalTextureMipmapLimit = 0;
 
-            RenderPipelineAsset pipeline = QualitySettings.renderPipeline ?? GraphicsSettings.defaultRenderPipeline;
-            if (pipeline == null)
-                QualitySettings.antiAliasing = samples > 1 ? samples : 0;
+            if (renderPipeline == null &&
+                (QualitySettings.renderPipeline ?? GraphicsSettings.defaultRenderPipeline)
+                    is UniversalRenderPipelineAsset projectPipeline)
+            {
+                previousQualityPipeline = QualitySettings.renderPipeline;
+                renderPipeline = Instantiate(projectPipeline);
+                renderPipeline.name = "LC · настройки текущей игры";
+                QualitySettings.renderPipeline = renderPipeline;
+            }
+            if (renderPipeline != null)
+            {
+                renderPipeline.renderScale = 1f;
+                renderPipeline.msaaSampleCount = samples;
+                renderPipeline.supportsHDR = hdr;
+                renderPipeline.colorGradingMode = hdr
+                    ? ColorGradingMode.HighDynamicRange : ColorGradingMode.LowDynamicRange;
+                renderPipeline.shadowDistance = profile.ShadowDistance;
+                renderPipeline.shadowCascadeCount = profile.Cascades;
+                renderPipeline.cascadeBorder = .17f;
+                if (worldCamera != null && streetColorGrade == null)
+                    streetColorGrade = new StreetColorGrade(worldCamera);
+                streetColorGrade?.SetEnabled(hdr);
+            }
             else
             {
-                // URP 14 exposes these properties publicly. Leave other SRP assets alone.
-                Type type = pipeline.GetType();
-                if (type.FullName == "UnityEngine.Rendering.Universal.UniversalRenderPipelineAsset")
-                {
-                    type.GetProperty("renderScale")?.SetValue(pipeline,1f);
-                    type.GetProperty("msaaSampleCount")?.SetValue(pipeline,samples);
-                    type.GetProperty("supportsHDR")?.SetValue(pipeline,hdr);
-                    type.GetProperty("shadowDistance")?.SetValue(pipeline,profile.ShadowDistance);
-                    type.GetProperty("shadowCascadeCount")?.SetValue(pipeline,profile.Cascades);
-                }
+                QualitySettings.antiAliasing = samples > 1 ? samples : 0;
             }
         }
 
@@ -225,41 +244,53 @@ namespace LifeCraftRP
         public int Quality => quality;
         public string Weather => weather != null ? weather.Name : "Ясно";
 
-        public void ChangeWeather() => Notify("Погода: "+weather.Next()+".");
+        public void ChangeWeather()
+        {
+            Notify("Погода: "+weather.Next()+".");
+            nextLightUpdate = 0f;
+        }
 
         private void SetLight()
         {
-            float phase = (clockMinutes - 6*60) / 1440f * Mathf.PI * 2;
+            float phase = (clockMinutes - 6f*60f) / 1440f * Mathf.PI*2f;
             float height = Mathf.Sin(phase);
-            float daylight = Mathf.SmoothStep(0f,1f,Mathf.InverseLerp(-.08f,.75f,height));
-            float twilight = Mathf.SmoothStep(0f,1f,Mathf.InverseLerp(-.15f,.25f,height)) *
-                (1f-Mathf.SmoothStep(0f,1f,Mathf.InverseLerp(.24f,.55f,height)));
-            float overcast = Mathf.InverseLerp(.0015f,.009f,RenderSettings.fogDensity);
-            sun.transform.rotation = Quaternion.Euler(Mathf.Max(-9f,height*61f),126f-height*57f,0f);
-            sun.intensity = Mathf.Lerp(.08f,1.36f,daylight) * Mathf.Lerp(1f,.55f,overcast);
-            sun.shadowStrength = Mathf.Lerp(.50f,.84f,daylight) * Mathf.Lerp(1f,.78f,overcast);
-            Color morning = Color.Lerp(new Color(1f,.956f,.884f),new Color(1f,.72f,.49f),twilight*.67f);
-            sun.color = Color.Lerp(new Color(.58f,.70f,1f),morning,daylight+twilight*(1f-daylight));
+            float daylight = Mathf.SmoothStep(0f,1f,Mathf.InverseLerp(-.08f,.72f,height));
+            float twilight = Mathf.SmoothStep(0f,1f,Mathf.InverseLerp(-.15f,.20f,height)) *
+                (1f-Mathf.SmoothStep(0f,1f,Mathf.InverseLerp(.19f,.53f,height)));
+            float overcast = Mathf.InverseLerp(.0013f,.009f,RenderSettings.fogDensity);
+            bool linear = QualitySettings.activeColorSpace == ColorSpace.Linear;
 
-            RenderSettings.ambientSkyColor = Color.Lerp(new Color(.105f,.147f,.231f),
-                new Color(.60f,.71f,.81f),daylight);
-            RenderSettings.ambientEquatorColor = Color.Lerp(new Color(.069f,.088f,.127f),
-                new Color(.412f,.466f,.496f),daylight);
-            RenderSettings.ambientGroundColor = Color.Lerp(new Color(.050f,.061f,.074f),
-                new Color(.255f,.274f,.267f),daylight);
-            Color horizon = Color.Lerp(new Color(.066f,.102f,.192f),new Color(.586f,.733f,.814f),daylight);
-            horizon = Color.Lerp(horizon,new Color(.831f,.598f,.468f),.33f*twilight);
-            RenderSettings.fogColor = Color.Lerp(horizon,Color.Lerp(new Color(.145f,.187f,.253f),
-                new Color(.679f,.718f,.739f),daylight),overcast*.8f);
+            // An angled daylight key and softer directional fill keep asphalt and masonry readable.
+            sun.transform.rotation = Quaternion.Euler(Mathf.Max(-9f,height*54f),
+                Mathf.Repeat(179f-phase*Mathf.Rad2Deg,360f),0f);
+            sun.intensity = Mathf.Lerp(.073f,linear ? 1.33f : 1.15f,daylight) *
+                Mathf.Lerp(1f,.56f,overcast);
+            sun.shadowStrength = Mathf.Lerp(.47f,.82f,daylight) * Mathf.Lerp(1f,.68f,overcast);
+            Color sunColor = Color.Lerp(new Color(1f,.967f,.895f),
+                new Color(1f,.750f,.554f),twilight*.68f);
+            sunColor = Color.Lerp(sunColor,new Color(.874f,.932f,1f),overcast*.66f);
+            sun.color = Color.Lerp(new Color(.63f,.72f,.97f),sunColor,daylight+twilight*(1f-daylight));
+
+            Color skyFill = Color.Lerp(new Color(.112f,.158f,.234f),new Color(.641f,.739f,.839f),daylight);
+            Color horizonFill = Color.Lerp(new Color(.074f,.092f,.125f),new Color(.472f,.529f,.570f),daylight);
+            Color groundBounce = Color.Lerp(new Color(.064f,.071f,.090f),new Color(.325f,.304f,.270f),daylight);
+            RenderSettings.ambientSkyColor = Color.Lerp(skyFill,horizonFill,overcast*.45f);
+            RenderSettings.ambientEquatorColor = horizonFill;
+            RenderSettings.ambientGroundColor = groundBounce;
+
+            Color horizon = Color.Lerp(new Color(.067f,.105f,.183f),new Color(.638f,.748f,.826f),daylight);
+            horizon = Color.Lerp(horizon,new Color(.841f,.633f,.477f),.29f*twilight);
+            RenderSettings.fogColor = Color.Lerp(horizon,Color.Lerp(new Color(.157f,.184f,.237f),
+                new Color(.684f,.723f,.749f),daylight),overcast*.84f);
 
             if (worldCamera != null)
-                worldCamera.backgroundColor = horizon;
+                worldCamera.backgroundColor = RenderSettings.fogColor;
             if (skybox != null)
             {
-                skybox.SetColor("_SkyTint",Color.Lerp(new Color(.25f,.34f,.58f),
-                    new Color(.49f,.55f,.62f),daylight));
+                Color clearSky = Color.Lerp(new Color(.273f,.323f,.489f),new Color(.496f,.559f,.640f),daylight);
+                skybox.SetColor("_SkyTint",Color.Lerp(clearSky,new Color(.546f,.569f,.589f),overcast*.60f));
                 skybox.SetColor("_GroundColor",RenderSettings.fogColor);
-                skybox.SetFloat("_Exposure",Mathf.Lerp(.31f,1.16f,daylight));
+                skybox.SetFloat("_Exposure",Mathf.Lerp(.28f,1.11f,daylight)*Mathf.Lerp(1f,.89f,overcast));
             }
         }
 
@@ -296,7 +327,11 @@ namespace LifeCraftRP
             }
 
             clockMinutes = (clockMinutes+Time.deltaTime*3f)%1440f;
-            SetLight();
+            if (Time.unscaledTime >= nextLightUpdate)
+            {
+                SetLight();
+                nextLightUpdate = Time.unscaledTime + .08f;
+            }
             Vehicles.Tick();
             if (Online)
             {
@@ -422,6 +457,13 @@ namespace LifeCraftRP
 
         private void OnDestroy()
         {
+            streetColorGrade?.Dispose();
+            if (renderPipeline != null)
+            {
+                if (QualitySettings.renderPipeline == renderPipeline)
+                    QualitySettings.renderPipeline = previousQualityPipeline;
+                Destroy(renderPipeline);
+            }
             if (skybox != null)
             {
                 if (RenderSettings.skybox == skybox)

@@ -26,7 +26,7 @@ namespace LifeCraftRP
         private readonly Dictionary<string,float> surfaceTiling = new Dictionary<string,float>
         {
             {"asphalt",.226f}, {"walk",.58f}, {"wall",.34f},
-            {"roof",.28f}, {"floor",.46f}, {"grass",.31f},
+            {"roof",.28f}, {"floor",.46f}, {"grass",.31f}, {"panelSand",.35f},
         };
         private static readonly Color OffWhite = new Color(.9f,.92f,.88f);
         private static readonly Color Mint = new Color(.32f,.90f,.73f);
@@ -54,6 +54,8 @@ namespace LifeCraftRP
             Mat("trunk", new Color(.28f,.20f,.15f));
             Mat("grass", new Color(.30f,.41f,.32f), "Concrete");
             Mat("screen",new Color(.20f,.54f,.55f),null,.42f);
+            Mat("displayGlass",new Color(.39f,.55f,.57f,.22f),null,.74f);
+            SetTransparent(materials["displayGlass"]);
             StreetMaterial("asphalt","Asphalt",new Color(.56f,.54f,.52f));
             StreetMaterial("walk","ConcretePavers",new Color(.77f,.73f,.68f));
             StreetMaterial("wall","WeatheredConcrete",new Color(.85f,.81f,.75f));
@@ -76,9 +78,26 @@ namespace LifeCraftRP
             Mat("windowFrame",new Color(.68f,.67f,.62f));
             Mat("balconyPanel",new Color(.31f,.36f,.37f),null,.36f);
             Mat("bark",new Color(.34f,.27f,.21f));
-            Mat("leavesShade",new Color(.17f,.28f,.12f));
-            Mat("leavesMoss",new Color(.30f,.41f,.19f));
-            Mat("leavesTop",new Color(.44f,.49f,.25f));
+            StreetMaterial("leavesShade","Foliage",new Color(.36f,.47f,.27f));
+            StreetMaterial("leavesMoss","Foliage",new Color(.44f,.54f,.33f));
+            StreetMaterial("leavesTop","Foliage",new Color(.54f,.60f,.41f));
+        }
+
+        private static void SetTransparent(Material material)
+        {
+            if (material.HasProperty("_Surface")) material.SetFloat("_Surface",1f);
+            if (material.HasProperty("_Mode")) material.SetFloat("_Mode",2f);
+            if (material.HasProperty("_Cull")) material.SetFloat("_Cull",0f);
+            if (material.HasProperty("_SrcBlend"))
+                material.SetFloat("_SrcBlend",(float)UnityEngine.Rendering.BlendMode.SrcAlpha);
+            if (material.HasProperty("_DstBlend"))
+                material.SetFloat("_DstBlend",(float)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+            if (material.HasProperty("_ZWrite")) material.SetFloat("_ZWrite",0f);
+            material.SetOverrideTag("RenderType","Transparent");
+            material.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+            material.EnableKeyword("_ALPHABLEND_ON");
+            material.renderQueue=(int)UnityEngine.Rendering.RenderQueue.Transparent;
+            material.SetShaderPassEnabled("ShadowCaster",false);
         }
 
         private void StreetMaterial(string key,string texture,Color color)
@@ -148,7 +167,7 @@ namespace LifeCraftRP
         }
 
         private void Room(string label,float x,float z,float w,float d,float h,
-                          float doorX,string facade,bool roof = true)
+                          float doorX,string facade,bool roof = true,bool storefront = false)
         {
             float front = z - d/2;
             const float doorWidth = 2.45f;
@@ -162,11 +181,28 @@ namespace LifeCraftRP
             float leftWidth = doorX - doorWidth/2 - start;
             float rightWidth = end - doorX - doorWidth/2;
             Box(label+" · фасад",start+leftWidth/2,h/2,front,leftWidth,h,.35f,facade);
-            Box(label+" · фасад",end-rightWidth/2,h/2,front,rightWidth,h,.35f,facade);
+            if (storefront)
+            {
+                float rightStart=end-rightWidth;
+                float glassStart=rightStart+1.37f, glassEnd=end-1.18f;
+                float glassWidth=glassEnd-glassStart, windowX=(glassStart+glassEnd)*.5f;
+                const float sill=.70f, head=2.91f;
+                Box(label+" · край витрины",rightStart+.685f,h/2,front,1.37f,h,.35f,facade);
+                Box(label+" · край витрины",end-.59f,h/2,front,1.18f,h,.35f,facade);
+                Box(label+" · подоконная часть",windowX,sill/2,front,glassWidth,sill,.35f,facade);
+                Box(label+" · над витриной",windowX,(h+head)/2,front,glassWidth,h-head,.35f,facade);
+                Box(label+" · стекло витрины",windowX,(sill+head)/2,front,
+                    glassWidth,head-sill,.12f,"displayGlass");
+            }
+            else
+            {
+                Box(label+" · фасад",end-rightWidth/2,h/2,front,rightWidth,h,.35f,facade);
+            }
             Box(label+" · над дверью",doorX,(h+doorHeight)/2,front,doorWidth,h-doorHeight,.35f,facade);
             if (roof)
                 Box(label+" · кровля",x,h+.16f,z,w+.45f,.32f,d+.45f,"roof");
-            Sign(label,x,h-.65f,front-.205f,.185f);
+            if (!storefront)
+                Sign(label,x,h-.65f,front-.205f,.185f);
         }
 
         private void Door(string label,float x,float z,Func<bool> canOpen = null)
@@ -300,11 +336,15 @@ namespace LifeCraftRP
 
         private void Services()
         {
-            Room("МАГАЗИН У ДОМА",49,0,20,14,4.5f,46,"violet");
+            Room("МАГАЗИН У ДОМА",49,0,20,14,4.5f,46,"panelSand",storefront:true);
             Door("Вход в магазин",46,-7);
             Box("Продуктовая стойка",54.5f,1.12f,1.5f,2.2f,2.1f,.75f,"roof");
             for(int i=0;i<4;i++)
                 Box("Продукты",53.76f+i*.51f,1.51f,.99f,.31f,.51f,.31f,"cargo",false);
+            Box("Витринная стойка",54.8f,.59f,-4.4f,4.85f,.98f,.65f,"roof");
+            for(int i=0;i<8;i++)
+                Box("Товар у витрины",52.8f+i*.55f,1.27f+(i%2)*.07f,-4.43f,.30f,
+                    .28f+(i%3)*.065f,.29f,i%3==0 ? "violet" : i%3==1 ? "mint" : "cargo",false);
             Box("Касса",50.6f,.61f,-1,1.55f,1.21f,.76f,"navy");
             Spot("Купить продукты",50.6f,-2.3f,()=>game.OpenService("shop"));
             Box("Пункт курьеров",40f,1.17f,-8.6f,2.9f,2.34f,.40f,"navy");

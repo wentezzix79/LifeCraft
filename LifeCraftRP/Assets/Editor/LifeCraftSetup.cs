@@ -37,10 +37,47 @@ namespace LifeCraftRP.Editor
             PlayerSettings.defaultScreenHeight = 720;
             PlayerSettings.defaultInterfaceOrientation = UIOrientation.LandscapeLeft;
             PlayerSettings.insecureHttpOption = InsecureHttpOption.AlwaysAllowed;
+            ConfigureLinearColorSpace();
             EnsurePipeline();
+            EnsureStreetColorGrade();
             KeepRuntimeShaders();
             ActorMotionAssets.Ensure();
             AssetDatabase.SaveAssets();
+        }
+
+        private static void ConfigureLinearColorSpace()
+        {
+            // Android linear rendering requires Vulkan or OpenGL ES 3.0 or newer.
+            // Preserve the Editor's API selection except when a GLES2 override would block Linear.
+            if (!PlayerSettings.GetUseDefaultGraphicsAPIs(BuildTarget.Android))
+            {
+                GraphicsDeviceType[] apis = PlayerSettings.GetGraphicsAPIs(BuildTarget.Android);
+                GraphicsDeviceType[] compatible = Array.FindAll(apis,x => x != GraphicsDeviceType.OpenGLES2);
+                if (compatible.Length == 0)
+                    PlayerSettings.SetUseDefaultGraphicsAPIs(BuildTarget.Android,true);
+                else if (compatible.Length != apis.Length)
+                    PlayerSettings.SetGraphicsAPIs(BuildTarget.Android,compatible);
+            }
+            if (PlayerSettings.colorSpace != ColorSpace.Linear)
+                PlayerSettings.colorSpace = ColorSpace.Linear;
+        }
+
+        private static void EnsureStreetColorGrade()
+        {
+            string path = "Assets/Resources/"+StreetColorGrade.ResourcePath+".asset";
+            if (AssetDatabase.LoadAssetAtPath<VolumeProfile>(path) != null)
+                return;
+
+            if (!AssetDatabase.IsValidFolder("Assets/Resources"))
+                AssetDatabase.CreateFolder("Assets","Resources");
+            if (!AssetDatabase.IsValidFolder("Assets/Resources/Art"))
+                AssetDatabase.CreateFolder("Assets/Resources","Art");
+            var profile = ScriptableObject.CreateInstance<VolumeProfile>();
+            StreetColorGrade.Configure(profile);
+            AssetDatabase.CreateAsset(profile,path);
+            foreach (VolumeComponent component in profile.components)
+                AssetDatabase.AddObjectToAsset(component,profile);
+            EditorUtility.SetDirty(profile);
         }
 
         private static void EnsurePipeline()
@@ -59,10 +96,18 @@ namespace LifeCraftRP.Editor
                     AssetDatabase.CreateAsset(renderer, RendererPath);
                 }
 
-                ResourceReloader.ReloadAllNullIn(renderer, UniversalRenderPipelineAsset.packagePath);
+                bool rendererChanges = ResourceReloader.ReloadAllNullIn(
+                    renderer,UniversalRenderPipelineAsset.packagePath);
+                if (renderer.postProcessData == null)
+                {
+                    renderer.postProcessData = AssetDatabase.LoadAssetAtPath<PostProcessData>(
+                        UniversalRenderPipelineAsset.packagePath+"/Runtime/Data/PostProcessData.asset");
+                    rendererChanges |= renderer.postProcessData != null;
+                }
                 if (renderer.shaders == null || renderer.shaders.blitPS == null)
                     throw new InvalidOperationException("URP renderer shader resources are unavailable.");
-                EditorUtility.SetDirty(renderer);
+                if (rendererChanges)
+                    EditorUtility.SetDirty(renderer);
 
                 if (pipeline == null)
                 {
@@ -87,10 +132,13 @@ namespace LifeCraftRP.Editor
                 var quality = new SerializedObject(pipeline);
                 quality.FindProperty("m_MainLightShadowmapResolution").intValue = 2048;
                 quality.FindProperty("m_SoftShadowsSupported").boolValue = true;
+                quality.FindProperty("m_Cascade2Split").floatValue = .28f;
                 quality.ApplyModifiedPropertiesWithoutUndo();
 
-                GraphicsSettings.defaultRenderPipeline = pipeline;
-                QualitySettings.renderPipeline = pipeline;
+                if (GraphicsSettings.defaultRenderPipeline != pipeline)
+                    GraphicsSettings.defaultRenderPipeline = pipeline;
+                if (QualitySettings.renderPipeline != pipeline)
+                    QualitySettings.renderPipeline = pipeline;
             }
             catch (Exception error)
             {
