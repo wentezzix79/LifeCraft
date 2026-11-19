@@ -11,12 +11,11 @@ namespace LifeCraftRP
 {
     public sealed class UIManager
     {
-        private static readonly Color Panel = new Color(.052f,.079f,.099f,.97f);
-        private static readonly Color Line = new Color(.118f,.165f,.19f,.97f);
+        private static readonly Color Panel = new Color(.098f,.072f,.154f,.98f);
+        private static readonly Color Line = new Color(.21f,.165f,.315f,.98f);
         private static readonly Color Paper = new Color(.95f,.965f,.95f,1);
-        private static readonly Color Dim = new Color(.68f,.76f,.78f,1);
-        private static readonly Color Mint = new Color(.43f,.94f,.76f,1);
-        private static readonly Color Warm = new Color(1f,.69f,.39f,1);
+        private static readonly Color Dim = new Color(.77f,.72f,.85f,1);
+        private static readonly Color Mint = new Color(.75f,.565f,1f,1f);
         private static readonly CultureInfo Ru = CultureInfo.GetCultureInfo("ru-RU");
         private readonly GameManager game;
         private readonly Font font;
@@ -24,16 +23,11 @@ namespace LifeCraftRP
         private readonly RectTransform overlay;
         private readonly RectTransform modal;
         private readonly RectTransform body;
-        private readonly Text clock,district,balance,details,task,interaction,toast,title,subtitle;
-        private readonly Image health, armor, stamina;
-        private readonly RawImage smallMap;
-        private readonly RawImage bigMap;
-        private readonly RectTransform bigMapDot;
-        private readonly RectTransform[] landmarkPins;
-        private readonly RectTransform visitLandmark;
-        private readonly Texture2D mapTexture;
-        private readonly MapRegion[] mapRegions;
-        private readonly RectTransform mapContainer;
+        private readonly Text interaction,toast,title,subtitle;
+        private readonly LifeCraftHud hud;
+        private readonly LifeCraftMapPage map;
+        private readonly LifeCraftRouteGraphic minimapRoute;
+        private string mapFocus;
         private RectTransform rows;
         private Text chat;
         private Text status;
@@ -42,34 +36,12 @@ namespace LifeCraftRP
         private string host="http://127.0.0.1:8080";
         private string user="";
         private string password="";
-        private bool mapZoom;
-        private string phoneRoute;
-        private OmskLandmarks.Site mapSite;
         private static readonly string[] Presets = { "Very Low", "Low", "Medium", "High", "Ultra" };
-
-        private readonly struct MapRegion
-        {
-            public readonly Texture2D Texture;
-            public readonly Rect Bounds;
-
-            public MapRegion(string resource,float x,float z,float radius)
-            {
-                Texture = Resources.Load<Texture2D>("Omsk/"+resource);
-                Bounds = Rect.MinMaxRect(x-radius,z-radius,x+radius,z+radius);
-            }
-        }
 
         public UIManager(GameManager game)
         {
             this.game = game;
             font = Resources.Load<Font>("Art/DejaVuSans") ?? Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-            mapTexture = OmskWorld.LoadMapTexture();
-            mapRegions = new[]
-            {
-                new MapRegion("starter-map",0,0,1250),
-                new MapRegion("east-map",1700,-100,1300),
-                new MapRegion("mega-map",-6850,-100,1300)
-            };
             if (EventSystem.current == null)
                 new GameObject("События интерфейса",typeof(EventSystem),typeof(StandaloneInputModule));
             var canvas = new GameObject("LIFE CRAFT · интерфейс",typeof(Canvas),typeof(CanvasScaler),
@@ -82,57 +54,22 @@ namespace LifeCraftRP
             scaler.matchWidthOrHeight=.44f;
             screen=canvas.GetComponent<RectTransform>();
 
-            var brand=ImagePanel("HUD · персонаж",screen,Panel);
-            Place(brand,0,1,24,-24,312,151);
-            var line=ImagePanel("Линия",brand,Mint);
-            Place(line,0,1,0,0,3,151);
-            Text mark=Label("LIFE CRAFT",brand,24,Paper,FontStyle.Bold);
-            Place(mark.rectTransform,0,1,17,-10,186,37);
-            clock=Label("",brand,18,Mint,FontStyle.Normal,TextAnchor.MiddleRight);
-            Place(clock.rectTransform,1,1,-14,-12,72,30);
-            district=Label("",brand,16,Dim);
-            Place(district.rectTransform,0,1,17,-47,276,28);
-            balance=Label("",brand,25,Paper,FontStyle.Bold);
-            Place(balance.rectTransform,0,1,17,-75,208,39);
-            details=Label("",brand,14,Dim,FontStyle.Normal,TextAnchor.MiddleRight);
-            Place(details.rectTransform,1,1,-14,-85,112,25);
-            health=Gauge(brand,17,-124,new Color(.41f,.87f,.59f));
-            armor=Gauge(brand,111,-124,new Color(.51f,.70f,.97f));
-            stamina=Gauge(brand,205,-124,Warm);
-
-            var quest=ImagePanel("HUD · Текущая задача",screen,Panel);
-            Place(quest,1,1,-24,-82,445,91);
-            Text questTitle=Label("ТЕКУЩАЯ ЗАДАЧА",quest,13,Mint,FontStyle.Bold);
-            Place(questTitle.rectTransform,0,1,15,-6,413,26);
-            task=Label("",quest,17,Paper,FontStyle.Normal,TextAnchor.UpperLeft);
-            Place(task.rectTransform,0,1,15,-38,413,49);
-
-            var shortcuts=Create("Меню быстрого доступа",screen);
-            Place(shortcuts,1,1,-24,-24,445,45);
-            for (int i=0;i<3;i++)
-            {
-                string mode=new [] { "map","phone","menu" }[i];
-                var button=Button("Кнопка "+mode,shortcuts,new [] { "Карта","Телефон","Меню" }[i],
-                                  ()=>game.Toggle(mode),false);
-                Place(button,0,1,i*151,0,143,45);
-            }
-
-            var mini=ImagePanel("HUD · миникарта",screen,Panel);
-            Place(mini,0,Application.isMobilePlatform?1:0,24,Application.isMobilePlatform?-188:28,166,166);
-            smallMap=CreateRaw("Кварталы",mini,mapTexture);
-            Stretch(smallMap.rectTransform,5,5,5,5);
-            var middle=ImagePanel("Метка игрока",mini,Mint);
-            Center(middle,8,8);
-            Text north=Label("С",mini,18,Paper,FontStyle.Bold,TextAnchor.MiddleCenter);
-            Place(north.rectTransform,1,1,-6,-4,23,27);
-            mini.GetComponent<Image>().raycastTarget=false;
+            hud=new LifeCraftHud(game,screen,font);
+            var mapMask=hud.Minimap.GetComponent<RectMask2D>();
+            if(!mapMask)
+                hud.Minimap.gameObject.AddComponent<RectMask2D>();
+            minimapRoute=Create("Маршрут на миникарте",hud.Minimap.rectTransform)
+                .gameObject.AddComponent<LifeCraftRouteGraphic>();
+            minimapRoute.raycastTarget=false;
+            minimapRoute.color=new Color(1f,.46f,.27f,1f);
+            Stretch(minimapRoute.rectTransform,0,0,0,0);
 
             interaction=Label("",screen,19,Paper,FontStyle.Bold,TextAnchor.MiddleCenter);
             Place(interaction.rectTransform,.5f,0,0,29,650,54);
             interaction.rectTransform.pivot=new Vector2(.5f,0);
             interaction.raycastTarget=false;
             toast=Label("",screen,17,Paper,FontStyle.Bold,TextAnchor.MiddleCenter);
-            Place(toast.rectTransform,.5f,0,0,94,840,63);
+            Place(toast.rectTransform,.5f,0,0,151,840,63);
             toast.rectTransform.pivot=new Vector2(.5f,0);
             toast.raycastTarget=false;
 
@@ -151,39 +88,7 @@ namespace LifeCraftRP
             Place(close,1,1,-19,-20,45,45);
             body=Create("Содержимое",modal);
             Stretch(body,25,26,25,109);
-            mapContainer=Create("Карта",body);
-            Stretch(mapContainer,0,0,0,0);
-            bigMap=CreateRaw("Геоданные Омска",mapContainer,mapTexture);
-            Place(bigMap.rectTransform,.5f,.5f,0,-5,670,385);
-            var places = game.World.Landmarks;
-            landmarkPins = new RectTransform[places.Count];
-            for (int i=0;i<places.Count;i++)
-            {
-                OmskLandmarks.Site site = places[i];
-                landmarkPins[i] = Button(site.name,bigMap.rectTransform,"",
-                    ()=>FocusLandmark(site),true);
-                landmarkPins[i].GetComponent<Image>().color=Warm;
-                Center(landmarkPins[i],10,10);
-                string caption = site.id == "culture-park" ? "Парк им. 30-летия ВЛКСМ" : site.name;
-                var tab = Button(site.name,mapContainer,caption,()=>FocusLandmark(site),false);
-                Place(tab,0,1,14+i*226,0,218,40);
-            }
-            bigMapDot=ImagePanel("Вы находитесь здесь",bigMap.rectTransform,Mint);
-            Center(bigMapDot,12,12);
-            var zoomButton=Button("Масштаб",mapContainer,"Весь город / район",()=>
-            {
-                mapZoom=!mapZoom;
-                UpdateBigMap();
-            },false);
-            Place(zoomButton,0,0,14,0,218,38);
-            visitLandmark=Button("Переход к ориентиру",mapContainer,"Посетить",()=>
-            {
-                if (mapSite != null && game.VisitOmskLandmark(mapSite))
-                    Close();
-            },true);
-            Place(visitLandmark,1,0,-14,0,134,38);
-            Text attribution=Label(OmskWorld.Attribution,mapContainer,13,Dim,FontStyle.Normal,TextAnchor.MiddleCenter);
-            Place(attribution.rectTransform,.5f,0,40,0,270,35);
+            map=new LifeCraftMapPage(game,screen,font,Close);
             overlay.gameObject.SetActive(false);
         }
 
@@ -209,13 +114,14 @@ namespace LifeCraftRP
             Mode=mode;
             game.Player.MenusOpen=true;
             game.Player.Animation.Phone(mode=="phone");
-            overlay.gameObject.SetActive(true);
+            overlay.gameObject.SetActive(mode!="map");
             RefreshModal();
         }
 
         public void Close()
         {
             Mode=null;
+            map.Hide();
             overlay.gameObject.SetActive(false);
             game.Player.MenusOpen=false;
             game.Player.Animation.Phone(false);
@@ -225,15 +131,10 @@ namespace LifeCraftRP
 
         public void RefreshHud(InteractionSystem.Site near)
         {
-            PlayerState player=game.Session.State;
-            clock.text=$"{game.Hour:00}:{game.Minute:00}";
-            district.text=OmskWorld.DistrictName(game.Player.transform.position)+"  /  "+game.Weather;
-            balance.text=Rubles(game.Online?game.Network.Cash:player.Cash);
-            details.text=game.Online ? "В СЕТИ" : $"УР. {player.Level}  •  {player.Experience%100} XP";
-            health.fillAmount=game.Player.Health01;
-            armor.fillAmount=game.Player.Armor01;
-            stamina.fillAmount=game.Player.Stamina01;
-            task.text=game.CurrentTask;
+            map.Tick();
+            hud.SetRouteStatus(map.NavigationSummary);
+            hud.Refresh(IsOpen,IsTyping);
+            interaction.enabled=hud.Visible && !IsOpen;
             if (game.Vehicles.IsDriving)
                 interaction.text=$"{game.Vehicles.Speed:0} км/ч    •    {game.Vehicles.Fuel:0.0} л";
             else if(near!=null)
@@ -241,10 +142,13 @@ namespace LifeCraftRP
             else
                 interaction.text=game.Vehicles.IsNear && !Application.isMobilePlatform ?
                     "[ F ]   Автомобиль" : string.Empty;
-            toast.enabled=Time.unscaledTime<toastUntil;
-            UpdateMinimap(game.Player.transform.position);
-            if(Mode=="map")
-                UpdateBigMap();
+            toast.enabled=hud.Visible && Time.unscaledTime<toastUntil;
+            if (hud.Visible && !IsOpen)
+            {
+                Rect view=MinimapView(game.Player.Position);
+                LifeCraftMapViewport.DrawRaster(hud.Minimap,view);
+                minimapRoute.SetRoute(map.Route,view);
+            }
             if(Mode=="network" && status!=null)
                 status.text=game.Network.Status;
             if (Mode=="pause" && pauseHint!=null)
@@ -258,6 +162,8 @@ namespace LifeCraftRP
             toast.text=message;
             toast.enabled=true;
             toastUntil=Time.unscaledTime+4f;
+            if(Mode=="map")
+                map.Notify(message);
         }
 
         public void RefreshChat()
@@ -281,13 +187,13 @@ namespace LifeCraftRP
                 rows=null;
             }
             chat=null; status=null; pauseHint=null;
-            mapContainer.gameObject.SetActive(Mode=="map");
-            if(Mode=="map")
+            if (Mode=="map")
             {
-                MapHeader();
-                UpdateBigMap();
+                map.Show(mapFocus);
+                mapFocus=null;
                 return;
             }
+            map.Hide();
             rows=ScrollRows(body);
             PlayerState state=game.Session.State;
             switch(Mode)
@@ -314,7 +220,7 @@ namespace LifeCraftRP
                     Info(game.CurrentTask,74);
                     Row("Склад · показать район на карте",()=>
                     {
-                        mapZoom=true; mapSite=null; phoneRoute="warehouse"; Open("map");
+                        mapFocus="warehouse"; Open("map");
                     });
                     if(!game.Online)
                         Info("Чтобы начать доставку, найдите терминал «Курьеры» у магазина.",72);
@@ -402,6 +308,13 @@ namespace LifeCraftRP
                              .ToLocalTime().ToString("dd.MM HH:mm",Ru)
                          : "Активных договоров аренды нет.",65);
                     break;
+                case "business-status":
+                    Header("Бизнес","Киоск · LC Торговля");
+                    Info(state.KioskOwned ?
+                        $"Товаров {state.KioskStock}  •  Продаж {state.KioskSales}  •  Цена {Rubles(state.KioskUnitPrice)}" :
+                        "Свободный киоск можно приобрести на месте.",72);
+                    Row("Показать киоск на карте",()=>{ mapFocus="kiosk"; Open("map"); });
+                    break;
                 case "business":
                     Header("Киоск","Закупка и розничная торговля");
                     if(!state.KioskOwned)
@@ -484,78 +397,13 @@ namespace LifeCraftRP
             subtitle.text=caption;
         }
 
-        private void UpdateMinimap(Vector3 world)
+        private Rect MinimapView(Vector3 point)
         {
-            DrawMap(smallMap,MapView(world,1120f,1120f));
-        }
-
-        private void FocusLandmark(OmskLandmarks.Site site)
-        {
-            mapSite = site;
-            phoneRoute = null;
-            mapZoom = true;
-            MapHeader();
-            UpdateBigMap();
-        }
-
-        private void MapHeader()
-        {
-            Header("Карта Омска",mapSite == null
-                ? "Выберите место на карте или в списке."
-                : mapSite.name+"  ·  "+mapSite.address);
-        }
-
-        private void UpdateBigMap()
-        {
-            Vector3 current = game.Player.transform.position;
-            Vector3 focus = mapSite != null ? mapSite.Center :
-                phoneRoute=="warehouse" ? new Vector3(-27f,0f,2f) : current;
-            Rect view = mapZoom ? MapView(focus,1680f,1320f) : OmskWorld.WorldBounds;
-            bigMap.rectTransform.sizeDelta = new Vector2(385f*view.width/view.height,385f);
-            DrawMap(bigMap,view);
-            PlaceMapMarker(bigMapDot,current,view);
-            var places = game.World.Landmarks;
-            for (int i=0;i<places.Count;i++)
-            {
-                var pin = landmarkPins[i];
-                pin.sizeDelta = Vector2.one*(places[i] == mapSite ? 14f : 9f);
-                PlaceMapMarker(pin,places[i].Center,view);
-            }
-            visitLandmark.gameObject.SetActive(mapSite != null && !game.Online);
-            if(!mapZoom)
-                phoneRoute=null;
-        }
-
-        private void DrawMap(RawImage image,Rect view)
-        {
-            Rect source = OmskWorld.WorldBounds;
-            Texture2D texture = mapTexture;
-            foreach (var region in mapRegions)
-            {
-                Rect bounds = region.Bounds;
-                if (!region.Texture || view.xMin < bounds.xMin || view.xMax > bounds.xMax ||
-                    view.yMin < bounds.yMin || view.yMax > bounds.yMax)
-                    continue;
-                source = bounds;
-                texture = region.Texture;
-                break;
-            }
-            image.texture = texture;
-            image.uvRect = new Rect((view.x-source.x)/source.width,(view.y-source.y)/source.height,
-                view.width/source.width,view.height/source.height);
-        }
-
-        private static void PlaceMapMarker(RectTransform marker,Vector3 point,Rect view)
-        {
-            Vector2 normalized=new Vector2((point.x-view.x)/view.width,(point.z-view.y)/view.height);
-            marker.anchorMin=marker.anchorMax=normalized;
-            marker.anchoredPosition=Vector2.zero;
-            marker.gameObject.SetActive(new Rect(0f,0f,1f,1f).Contains(normalized));
-        }
-
-        private static Rect MapView(Vector3 point,float width,float height)
-        {
-            Rect city = OmskWorld.WorldBounds;
+            const float width=1120f;
+            Rect city=OmskWorld.WorldBounds;
+            Rect panel=hud.Minimap.rectTransform.rect;
+            float aspect=Mathf.Clamp(panel.width/Mathf.Max(1f,panel.height),.8f,3f);
+            float height=width/aspect;
             return new Rect(Mathf.Clamp(point.x-width/2,city.xMin,city.xMax-width),
                 Mathf.Clamp(point.z-height/2,city.yMin,city.yMax-height),width,height);
         }
@@ -616,22 +464,6 @@ namespace LifeCraftRP
             return content;
         }
 
-        private Image Gauge(RectTransform parent,float x,float y,Color color)
-        {
-            RectTransform back=ImagePanel("Показатель",parent,Line);
-            Place(back,0,1,x,y,82,7);
-            RectTransform fill=ImagePanel("Значение",back,color);
-            Stretch(fill,0,0,0,0);
-            Image image=fill.GetComponent<Image>();
-            image.type=Image.Type.Filled;
-            image.fillMethod=Image.FillMethod.Horizontal;
-            // A sprite is required for an Image with Fill mode.
-            Texture2D texture=Texture2D.whiteTexture;
-            image.sprite=Sprite.Create(texture,new Rect(0,0,texture.width,texture.height),
-                                       new Vector2(.5f,.5f));
-            return image;
-        }
-
         private RectTransform Button(string name,Transform parent,string caption,Action action,bool primary)
         {
             RectTransform rect=ImagePanel(name,parent,primary?Mint:Line);
@@ -648,14 +480,6 @@ namespace LifeCraftRP
             Text label=Label(caption,rect,18,primary?Panel:Paper,FontStyle.Bold,TextAnchor.MiddleCenter);
             Stretch(label.rectTransform,11,2,11,2);
             return rect;
-        }
-
-        private RawImage CreateRaw(string name,Transform parent, Texture texture)
-        {
-            var obj=Create(name,parent).gameObject.AddComponent<RawImage>();
-            obj.texture=texture; obj.raycastTarget=false;
-            obj.color=texture!=null ? Color.white : Line;
-            return obj;
         }
 
         private Text Label(string caption,Transform parent,int size,Color color,

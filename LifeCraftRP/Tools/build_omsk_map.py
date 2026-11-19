@@ -14,6 +14,8 @@ CITY_BOUNDS = (73.15, 54.82, 73.64, 55.17)
 CITY_SIZE = (2048, 2560)
 SUPERSAMPLE = 2
 LOCAL_MAPS = {"east-map": (1700, -100), "mega-map": (-6850, -100)}
+INTERFACE_REGIONS = {"starter-map": (0, 0, 1250), "east-map": (1700, -100, 1300),
+                     "mega-map": (-6850, -100, 1300)}
 
 
 def local_bounds(x, z, extent=1300):
@@ -63,6 +65,35 @@ ROAD_CLASSES = {
 }
 BUILDING_COLORS = {"building": "#404c58", "housing": "#48525e", "civic": "#50616d"}
 
+INTERFACE_LAND = {
+    "field": "#dedeb3",
+    "residential": "#e7e0d7",
+    "industrial": "#d6cdda",
+    "commercial": "#dfd4e1",
+    "grass": "#c1deaf",
+    "woods": "#a5c994",
+    "park": "#9ac9a4",
+    "wetland": "#b0d1be",
+}
+INTERFACE_BUILDINGS = {"building": "#b9b0a3", "housing": "#a99d94", "civic": "#9d8fa5"}
+# Stroke colours, widths, and optional casings in draw order.
+INTERFACE_ROADS = {
+    "path": ("#b7b6a7", 1, None),
+    "service": ("#f6efe3", 2, None),
+    "street": ("#fffaf2", 2.7, "#c7beb0"),
+    "collector": ("#fff7db", 3.4, "#cebca2"),
+    "arterial": ("#ffdc8a", 4.6, "#bd9866"),
+    "expressway": ("#f4b858", 5.7, "#b6834f"),
+}
+# RGB hues also serve as the geographic accent of each transparent district.
+DISTRICT_COLORS = {
+    "Советский": (37, 138, 162),
+    "Кировский": (91, 94, 174),
+    "Ленинский": (168, 80, 140),
+    "Октябрьский": (99, 141, 86),
+    "Центральный": (183, 112, 79),
+}
+
 
 def classify(features):
     result = defaultdict(list)
@@ -108,12 +139,13 @@ def classify(features):
 
 
 class MapCanvas:
-    def __init__(self, bounds=CITY_BOUNDS, output_size=CITY_SIZE, stroke_scale=1):
+    def __init__(self, bounds=CITY_BOUNDS, output_size=CITY_SIZE, stroke_scale=1,
+                 mode="RGB", background="#19232e"):
         self.west, self.south, self.east, self.north = bounds
         self.output_size = output_size
         self.stroke_scale = stroke_scale
         size = tuple(n * SUPERSAMPLE for n in output_size)
-        self.image = Image.new("RGB", size, "#19232e")
+        self.image = Image.new(mode, size, background)
         self.draw = ImageDraw.Draw(self.image)
         self.longitude_scale = (size[0] - 1) / (self.east - self.west)
         self.latitude_scale = (size[1] - 1) / (self.north - self.south)
@@ -190,10 +222,48 @@ class MapCanvas:
 
         return self.image.resize(self.output_size, Image.Resampling.LANCZOS)
 
+    def build_interface(self, groups):
+        for name, color in INTERFACE_LAND.items():
+            self.draw_features(groups[name], color)
+        self.draw_features(groups["water"], "#61b9df", 3)
+        for name, color in INTERFACE_BUILDINGS.items():
+            self.draw_features(groups[name], color)
+        self.draw_features(groups["runway"], "#a4a7ac", 4)
+        self.draw_features(groups["rail"], "#f3eee6", 3.6)
+        self.draw_features(groups["rail"], "#8d86a0", 1.55)
+        for name, (color, width, casing) in INTERFACE_ROADS.items():
+            if casing:
+                self.draw_features(groups[name], casing, width + 1.7)
+            self.draw_features(groups[name], color, width)
+
+        return self.image.resize(self.output_size, Image.Resampling.LANCZOS)
+
+
+def district_layer(features):
+    regions = defaultdict(list)
+    for feature in features:
+        tags = feature["properties"]
+        name = tags.get("name", "").split(" ", 1)[0]
+        geometry = feature.get("geometry")
+        if (tags.get("_layer") == "boundary" and tags.get("admin_level") == "9"
+                and name in DISTRICT_COLORS and geometry
+                and geometry["type"] in ("Polygon", "MultiPolygon")):
+            regions[name].append(geometry)
+
+    canvas = MapCanvas(mode="RGBA", background=(0, 0, 0, 0))
+    for name, color in DISTRICT_COLORS.items():
+        canvas.draw_features(regions[name], color + (43,))
+    for name, color in DISTRICT_COLORS.items():
+        canvas.draw_features(regions[name], color + (167,), 4.8, outline_only=True)
+
+    return canvas.image.resize(canvas.output_size, Image.Resampling.LANCZOS)
+
 
 def save_map(image, path):
-    # Indexed PNG preserves the map's low-contrast palette with a smaller patch size.
-    image.quantize(colors=256, dither=Image.Dither.NONE).save(path, optimize=True)
+    # Indexed PNG keeps antialiased cartography compact with an exact district alpha layer.
+    if image.mode == "RGB":
+        image = image.quantize(colors=256, dither=Image.Dither.NONE)
+    image.save(path, optimize=True)
     print(f"{path} · {image.width} × {image.height}")
 
 
@@ -201,20 +271,35 @@ def main():
     project = Path(__file__).resolve().parents[1]
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("source", type=Path, nargs="?", default=project / "SourceData/omsk.geojson.gz")
-    parser.add_argument("output", type=Path, nargs="?", default=project / "Assets/Resources/Omsk/city-map.png")
+    parser.add_argument("output", type=Path, nargs="?", help="Destination PNG for the city raster")
     parser.add_argument("--landmark-maps", action="store_true",
                         help="Also make the high-resolution districts around Park and Mega")
+    parser.add_argument("--interface-maps", action="store_true",
+                        help="Make the bright HUD atlases, three close-ups and separate district layer")
     args = parser.parse_args()
     with gzip.open(args.source, "rt", encoding="utf-8") as source:
-        groups = classify(json.load(source)["features"])
-    args.output.parent.mkdir(parents=True, exist_ok=True)
+        features = json.load(source)["features"]
+    groups = classify(features)
+    city_name = "ui-city-map.png" if args.interface_maps else "city-map.png"
+    output = args.output or project / "Assets/Resources/Omsk" / city_name
+    output.parent.mkdir(parents=True, exist_ok=True)
     print(f"{sum(map(len, groups.values())):,} OSM features")
-    save_map(MapCanvas().build(groups), args.output)
+    if args.interface_maps:
+        save_map(MapCanvas(background="#ece7dc").build_interface(groups), output)
+        for name, (x, z, extent) in INTERFACE_REGIONS.items():
+            bounds = local_bounds(x, z, extent)
+            image = MapCanvas(bounds, (1536, 1536), stroke_scale=2.25,
+                              background="#ece7dc").build_interface(groups)
+            save_map(image, output.with_name("ui-" + name + ".png"))
+        save_map(district_layer(features), output.with_name("ui-districts-map.png"))
+        return
+
+    save_map(MapCanvas().build(groups), output)
     if args.landmark_maps:
         for name, (x, z) in LOCAL_MAPS.items():
             bounds = local_bounds(x, z)
             image = MapCanvas(bounds, (1536, 1536), stroke_scale=2.4).build(groups)
-            save_map(image, args.output.with_name(name + ".png"))
+            save_map(image, output.with_name(name + ".png"))
 
 
 if __name__ == "__main__":
