@@ -112,6 +112,7 @@ namespace LifeCraft.World
                     default:
                         throw new ArgumentException("Unknown Omsk landmark ID " + site.id);
                 }
+                OmskLandmarkStreets.Build(site.Root.transform,site.id);
                 return true;
             }
             catch (Exception error)

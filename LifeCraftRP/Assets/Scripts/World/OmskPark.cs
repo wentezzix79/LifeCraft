@@ -116,7 +116,12 @@ namespace LifeCraft.World
             AddMaterial("green",0x254A36,null,1,.22f);
             AddMaterial("glass",0xC9DBD7,null,1,.48f);
             AddMaterial("water",0x526D69,null,1,.52f);
+            AddMaterial("waterRipple",0x618380,null,1,.56f);
             AddMaterial("jet",0xA3C5CB,null,1,.56f);
+            AddMaterial("fountainCoping",0xC3C0B8,"WeatheredConcrete",.34f,.31f);
+            AddMaterial("fountainBelt",0x686B66,"WeatheredConcrete",.5f,.20f);
+            AddMaterial("boothPanel",0xCED3C9,null,1,.29f);
+            AddMaterial("boothScreen",0x2E5963,null,1,.60f);
             AddMaterial("birch",0xC6C0A9,"WeatheredConcrete",.32f);
             AddMaterial("bark",0x65584A,null,1,.11f);
             AddMaterial("foliage",0x526640,"Foliage",.23f);
@@ -189,6 +194,26 @@ namespace LifeCraft.World
             Text("ПАРК КУЛЬТУРЫ И ОТДЫХА",gate.At(0,7.15f,-.510f),gate.Forward,.51f,historicalGreen);
             Text("им. 30-летия ВЛКСМ",gate.At(0,6.58f,-.510f),gate.Forward,.39f,historicalGreen);
             Signpost(gate.At(-8.75f,0,29.2f),gate.Forward,"ЦЕНТРАЛЬНАЯ АЛЛЕЯ","ОЗЁРА  •  ПРОГУЛОЧНЫЙ МАРШРУТ");
+            InstantPhotoBooth(gate.At(-9.55f,0,13.25f),-gate.Forward);
+        }
+
+        private void InstantPhotoBooth(Vector3 point,Vector3 forward)
+        {
+            // The autumn 2026 installation stands near the central entrance.
+            var frame = new Basis(point,forward);
+            Box("stone",frame,new Vector3(0,.045f,0),new Vector3(1.60f,.09f,1.44f));
+            Box("boothPanel",frame,new Vector3(0,1.09f,0),new Vector3(1.07f,2.08f,.72f));
+            Box("metal",frame,new Vector3(0,.18f,0),new Vector3(1.12f,.19f,.76f));
+            Box("green",frame,new Vector3(0,1.975f,-.372f),new Vector3(1.03f,.24f,.08f));
+            Text("ФОТО",frame.At(0,1.98f,-.415f),forward,.21f,Color.white);
+            Box("metal",frame,new Vector3(0,1.45f,-.370f),new Vector3(.69f,.84f,.08f));
+            Box("boothScreen",frame,new Vector3(0,1.40f,-.415f),new Vector3(.58f,.56f,.024f));
+            Text("Моментальное фото",frame.At(0,1.46f,-.429f),forward,.060f,Color.white);
+            Box("glass",frame,new Vector3(0,1.77f,-.419f),new Vector3(.065f,.062f,.033f));
+            Box("metal",frame,new Vector3(0,.82f,-.378f),new Vector3(.51f,.065f,.055f));
+            Box("green",frame,new Vector3(0,.53f,-.371f),new Vector3(.76f,.23f,.035f));
+            Text("ГОРОДСКИЕ ПАРКИ",frame.At(0,.53f,-.393f),forward,.09f,Color.white);
+            Collision("Фотобудка у центрального входа",frame.At(0,1.09f,0),forward,new Vector3(1.07f,2.08f,.72f));
         }
 
         private void DrawRoutes(Route[] routes)
@@ -242,16 +267,42 @@ namespace LifeCraft.World
                 Vector3 radial=Radial(i,4);
                 Bench(plaza+radial*10.8f,-radial);
             }
-            Vector3 basin=new Vector3(1978.32f,0,61.38f);
-            Tube("stone",basin+Vector3.up*.06f,basin+Vector3.up*.55f,6.6f,6.6f,44,false);
-            Disc("water",basin,6.18f,44,.47f);
-            Ring("tracing",basin,6.18f,6.62f,44,.55f);
-            Spray(basin+Vector3.up*.46f,Vector3.zero,3.65f);
-            for (int i=0;i<16;i++)
+            RebuiltFountain(new Vector3(1978.32f,0,61.38f));
+        }
+
+        private void RebuiltFountain(Vector3 basin)
+        {
+            // The fountain at the end of the main path reopened with a wider circular bowl.
+            const int segments=64;
+            Disc("paver",basin,12.65f,segments,.101f);
+            Ring("tracing",basin,9.19f,9.35f,segments,.105f);
+            Tube("fountainBelt",basin+Vector3.up*.08f,basin+Vector3.up*.61f,8.51f,8.51f,segments,false);
+            Tube("fountainCoping",basin+Vector3.up*.61f,basin+Vector3.up*.70f,8.60f,8.64f,segments,false);
+            Tube("fountainCoping",basin+Vector3.up*.48f,basin+Vector3.up*.70f,8.05f,8.05f,segments,false);
+            Ring("fountainCoping",basin,8.05f,8.64f,segments,.701f);
+            Disc("water",basin,8.07f,segments,.495f);
+            for(int i=0;i<32;i++)
             {
-                Vector3 radial=Radial(i,16);
-                Spray(basin+radial*4.65f+Vector3.up*.46f,-radial*1.30f,1.4f);
+                Vector3 radial=Radial(i,32), tangent=Radial(i+8,32);
+                Vector3 seam=basin+radial*8.37f+Vector3.up*.703f;
+                Box("fountainBelt",new Basis(seam,radial),Vector3.zero,new Vector3(.026f,.004f,.48f));
+                if (i%2==0)
+                {
+                    Vector3 outlet=basin+radial*6.30f;
+                    Disc("metal",outlet,.097f,8,.515f);
+                    Spray(outlet+Vector3.up*.51f,-radial*(2.32f+(i%3)*.35f),1.65f+(i%3)*.29f);
+                    Ring("waterRipple",outlet,.36f,.39f,18,.501f);
+                }
+                Collision("Борт фонтана",basin+radial*8.34f+Vector3.up*.37f,radial,new Vector3(1.66f,.68f,.57f));
+                if (i%4==0)
+                {
+                    Vector3 hub=basin+radial*1.65f;
+                    Spray(hub+Vector3.up*.51f,radial*.65f+tangent*.16f,2.45f+(i%3)*.34f);
+                }
             }
+            Ring("waterRipple",basin,7.28f,7.33f,segments,.502f);
+            Ring("waterRipple",basin,6.96f,6.99f,segments,.501f);
+            Spray(basin+Vector3.up*.51f,Vector3.zero,3.92f);
             for(int i=0;i<4;i++)
             {
                 Vector3 radial=Radial(i,4);
