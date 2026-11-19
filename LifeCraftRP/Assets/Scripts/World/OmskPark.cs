@@ -12,7 +12,7 @@ namespace LifeCraft.World
         private static readonly Vector3 GateCenter = new Vector3(1263.4f,0,-17.7f);
         private static readonly Vector3 GateForward = new Vector3(.9944f,0,.1057f);
         private const string LayoutPath = "Omsk/ParkLayout";
-        private const float PavementHeight = .068f;
+        private const float PavementHeight = .074f;
         private const float TreeCellSize = 220f;
 
         private readonly Dictionary<string,Material> materials = new Dictionary<string,Material>();
@@ -218,9 +218,11 @@ namespace LifeCraft.World
 
         private void DrawRoutes(Route[] routes)
         {
-            foreach (Route route in routes)
+            for (int index=0;index<routes.Length;index++)
             {
-                var points=Positions(route.xz,PavementHeight+.001f*route.style);
+                Route route=routes[index];
+                // Keep overlapping OSM paths and the entrance plaza on distinct planes.
+                var points=Positions(route.xz,PavementHeight+.016f*route.style+.00011f*index);
                 string surface=route.style==0 ? "paver" : route.style==1 ? "asphalt" : "cycling";
                 Ribbon(surface,points,route.width);
                 if (!route.lit)
