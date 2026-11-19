@@ -29,9 +29,10 @@ namespace LifeCraftRP
         private readonly RawImage smallMap;
         private readonly RawImage bigMap;
         private readonly RectTransform bigMapDot;
+        private readonly RectTransform[] landmarkPins;
+        private readonly RectTransform visitLandmark;
         private readonly Texture2D mapTexture;
-        private readonly Texture2D starterMap;
-        private const float StarterMapHalfExtent = 1250f;
+        private readonly MapRegion[] mapRegions;
         private readonly RectTransform mapContainer;
         private RectTransform rows;
         private Text chat;
@@ -43,14 +44,32 @@ namespace LifeCraftRP
         private string password="";
         private bool mapZoom;
         private string phoneRoute;
+        private OmskLandmarks.Site mapSite;
         private static readonly string[] Presets = { "Very Low", "Low", "Medium", "High", "Ultra" };
+
+        private readonly struct MapRegion
+        {
+            public readonly Texture2D Texture;
+            public readonly Rect Bounds;
+
+            public MapRegion(string resource,float x,float z,float radius)
+            {
+                Texture = Resources.Load<Texture2D>("Omsk/"+resource);
+                Bounds = Rect.MinMaxRect(x-radius,z-radius,x+radius,z+radius);
+            }
+        }
 
         public UIManager(GameManager game)
         {
             this.game = game;
             font = Resources.Load<Font>("Art/DejaVuSans") ?? Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
             mapTexture = OmskWorld.LoadMapTexture();
-            starterMap = Resources.Load<Texture2D>("Omsk/starter-map");
+            mapRegions = new[]
+            {
+                new MapRegion("starter-map",0,0,1250),
+                new MapRegion("east-map",1700,-100,1300),
+                new MapRegion("mega-map",-6850,-100,1300)
+            };
             if (EventSystem.current == null)
                 new GameObject("События интерфейса",typeof(EventSystem),typeof(StandaloneInputModule));
             var canvas = new GameObject("LIFE CRAFT · интерфейс",typeof(Canvas),typeof(CanvasScaler),
@@ -135,7 +154,20 @@ namespace LifeCraftRP
             mapContainer=Create("Карта",body);
             Stretch(mapContainer,0,0,0,0);
             bigMap=CreateRaw("Геоданные Омска",mapContainer,mapTexture);
-            Center(bigMap.rectTransform,628,446);
+            Place(bigMap.rectTransform,.5f,.5f,0,-5,670,385);
+            var places = game.World.Landmarks;
+            landmarkPins = new RectTransform[places.Count];
+            for (int i=0;i<places.Count;i++)
+            {
+                OmskLandmarks.Site site = places[i];
+                landmarkPins[i] = Button(site.name,bigMap.rectTransform,"",
+                    ()=>FocusLandmark(site),true);
+                landmarkPins[i].GetComponent<Image>().color=Warm;
+                Center(landmarkPins[i],10,10);
+                string caption = site.id == "culture-park" ? "Парк им. 30-летия ВЛКСМ" : site.name;
+                var tab = Button(site.name,mapContainer,caption,()=>FocusLandmark(site),false);
+                Place(tab,0,1,14+i*226,0,218,40);
+            }
             bigMapDot=ImagePanel("Вы находитесь здесь",bigMap.rectTransform,Mint);
             Center(bigMapDot,12,12);
             var zoomButton=Button("Масштаб",mapContainer,"Весь город / район",()=>
@@ -143,9 +175,15 @@ namespace LifeCraftRP
                 mapZoom=!mapZoom;
                 UpdateBigMap();
             },false);
-            Place(zoomButton,0,0,0,0,236,37);
-            Text attribution=Label(OmskWorld.Attribution,mapContainer,13,Dim,FontStyle.Normal,TextAnchor.MiddleRight);
-            Place(attribution.rectTransform,1,0,-8,0,320,35);
+            Place(zoomButton,0,0,14,0,218,38);
+            visitLandmark=Button("Переход к ориентиру",mapContainer,"Посетить",()=>
+            {
+                if (mapSite != null && game.VisitOmskLandmark(mapSite))
+                    Close();
+            },true);
+            Place(visitLandmark,1,0,-14,0,134,38);
+            Text attribution=Label(OmskWorld.Attribution,mapContainer,13,Dim,FontStyle.Normal,TextAnchor.MiddleCenter);
+            Place(attribution.rectTransform,.5f,0,40,0,270,35);
             overlay.gameObject.SetActive(false);
         }
 
@@ -246,7 +284,7 @@ namespace LifeCraftRP
             mapContainer.gameObject.SetActive(Mode=="map");
             if(Mode=="map")
             {
-                Header("Карта Омска","Точка отмечает ваше текущее положение.");
+                MapHeader();
                 UpdateBigMap();
                 return;
             }
@@ -276,7 +314,7 @@ namespace LifeCraftRP
                     Info(game.CurrentTask,74);
                     Row("Склад · показать район на карте",()=>
                     {
-                        mapZoom=true; phoneRoute="warehouse"; Open("map");
+                        mapZoom=true; mapSite=null; phoneRoute="warehouse"; Open("map");
                     });
                     if(!game.Online)
                         Info("Чтобы начать доставку, найдите терминал «Курьеры» у магазина.",72);
@@ -448,43 +486,79 @@ namespace LifeCraftRP
 
         private void UpdateMinimap(Vector3 world)
         {
-            const float cityWidth = .038f, cityHeight = .030f;
-            float width=cityWidth*OmskWorld.WorldBounds.width;
-            float height=cityHeight*OmskWorld.WorldBounds.height;
-            if (starterMap != null &&
-                Mathf.Abs(world.x)+width*.5f<=StarterMapHalfExtent &&
-                Mathf.Abs(world.z)+height*.5f<=StarterMapHalfExtent)
-            {
-                const float side=StarterMapHalfExtent*2f;
-                var center=new Vector2((world.x+StarterMapHalfExtent)/side,
-                    (world.z+StarterMapHalfExtent)/side);
-                smallMap.texture=starterMap;
-                smallMap.uvRect=ZoomRect(center,width/side,height/side);
-            }
-            else
-            {
-                smallMap.texture=mapTexture;
-                smallMap.uvRect=ZoomRect(OmskWorld.MapPosition(world),cityWidth,cityHeight);
-            }
+            DrawMap(smallMap,MapView(world,1120f,1120f));
+        }
+
+        private void FocusLandmark(OmskLandmarks.Site site)
+        {
+            mapSite = site;
+            phoneRoute = null;
+            mapZoom = true;
+            MapHeader();
+            UpdateBigMap();
+        }
+
+        private void MapHeader()
+        {
+            Header("Карта Омска",mapSite == null
+                ? "Выберите место на карте или в списке."
+                : mapSite.name+"  ·  "+mapSite.address);
         }
 
         private void UpdateBigMap()
         {
-            Vector2 point=OmskWorld.MapPosition(game.Player.transform.position);
-            Vector2 focus=phoneRoute=="warehouse" && mapZoom ?
-                OmskWorld.MapPosition(new Vector3(-27f,0f,2f)) : point;
-            Rect uv=mapZoom?ZoomRect(focus,.12f,.11f):new Rect(0f,0f,1f,1f);
-            bigMap.uvRect=uv;
-            Vector2 normalized=new Vector2((point.x-uv.x)/uv.width,(point.y-uv.y)/uv.height);
-            bigMapDot.anchorMin=bigMapDot.anchorMax=normalized;
-            bigMapDot.anchoredPosition=Vector2.zero;
-            bigMapDot.gameObject.SetActive(new Rect(0f,0f,1f,1f).Contains(normalized));
+            Vector3 current = game.Player.transform.position;
+            Vector3 focus = mapSite != null ? mapSite.Center :
+                phoneRoute=="warehouse" ? new Vector3(-27f,0f,2f) : current;
+            Rect view = mapZoom ? MapView(focus,1680f,1320f) : OmskWorld.WorldBounds;
+            bigMap.rectTransform.sizeDelta = new Vector2(385f*view.width/view.height,385f);
+            DrawMap(bigMap,view);
+            PlaceMapMarker(bigMapDot,current,view);
+            var places = game.World.Landmarks;
+            for (int i=0;i<places.Count;i++)
+            {
+                var pin = landmarkPins[i];
+                pin.sizeDelta = Vector2.one*(places[i] == mapSite ? 14f : 9f);
+                PlaceMapMarker(pin,places[i].Center,view);
+            }
+            visitLandmark.gameObject.SetActive(mapSite != null && !game.Online);
             if(!mapZoom)
                 phoneRoute=null;
         }
 
-        private static Rect ZoomRect(Vector2 p,float w,float h) =>
-            new Rect(Mathf.Clamp(p.x-w/2,0,1-w),Mathf.Clamp(p.y-h/2,0,1-h),w,h);
+        private void DrawMap(RawImage image,Rect view)
+        {
+            Rect source = OmskWorld.WorldBounds;
+            Texture2D texture = mapTexture;
+            foreach (var region in mapRegions)
+            {
+                Rect bounds = region.Bounds;
+                if (!region.Texture || view.xMin < bounds.xMin || view.xMax > bounds.xMax ||
+                    view.yMin < bounds.yMin || view.yMax > bounds.yMax)
+                    continue;
+                source = bounds;
+                texture = region.Texture;
+                break;
+            }
+            image.texture = texture;
+            image.uvRect = new Rect((view.x-source.x)/source.width,(view.y-source.y)/source.height,
+                view.width/source.width,view.height/source.height);
+        }
+
+        private static void PlaceMapMarker(RectTransform marker,Vector3 point,Rect view)
+        {
+            Vector2 normalized=new Vector2((point.x-view.x)/view.width,(point.z-view.y)/view.height);
+            marker.anchorMin=marker.anchorMax=normalized;
+            marker.anchoredPosition=Vector2.zero;
+            marker.gameObject.SetActive(new Rect(0f,0f,1f,1f).Contains(normalized));
+        }
+
+        private static Rect MapView(Vector3 point,float width,float height)
+        {
+            Rect city = OmskWorld.WorldBounds;
+            return new Rect(Mathf.Clamp(point.x-width/2,city.xMin,city.xMax-width),
+                Mathf.Clamp(point.z-height/2,city.yMin,city.yMax-height),width,height);
+        }
 
         private Text Info(string caption,float height)
         {

@@ -40,7 +40,7 @@ namespace LifeCraft.World
             null, "Grass", "Grass", "Grass", "WeatheredConcrete",
             "Asphalt", "Asphalt", "ConcretePavers", "Asphalt", null,
             "WeatheredConcrete", "WeatheredConcrete", "Brick", "WeatheredConcrete", "WeatheredConcrete",
-            null, null, null, "Grass"
+            null, null, "Foliage", "Grass"
         };
         // Named districts are representative points for wayfinding.
         private static readonly (string Name, double Lon, double Lat)[] Districts = {
@@ -85,13 +85,18 @@ namespace LifeCraft.World
         private static AdministrativeData administration;
         private static bool administrationRead;
         private readonly HashSet<Vector2Int> manifest = new HashSet<Vector2Int>();
+        private readonly HashSet<Vector2Int> detailManifest = new HashSet<Vector2Int>();
         private readonly HashSet<Vector2Int> failed = new HashSet<Vector2Int>();
+        private readonly HashSet<Vector2Int> failedDetails = new HashSet<Vector2Int>();
         private readonly Dictionary<Vector2Int, Tile> tiles = new Dictionary<Vector2Int, Tile>();
+        private OmskLandmarks landmarks;
         private Material[] materials;
         private GameObject ground;
         private Mesh groundMesh;
         private ResourceRequest request;
+        private ResourceRequest detailRequest;
         private Vector2Int requested;
+        private Vector2Int requestedDetail;
         private Vector2Int center;
         private float refreshAt;
         private int radius;
@@ -103,6 +108,8 @@ namespace LifeCraft.World
             public Mesh Display;
             public GameObject Decorations;
             public Mesh DecorationMesh;
+            public GameObject ExtraDetails;
+            public Mesh ExtraDetailMesh;
             public MeshRenderer Renderer;
             public Mesh Collision;
             public MeshCollider Collider;
@@ -119,10 +126,17 @@ namespace LifeCraft.World
 
         public string CurrentDistrict => DistrictName(FocusPosition());
         public int LoadedTileCount => tiles.Count;
+        internal IReadOnlyList<OmskLandmarks.Site> Landmarks => landmarks.Sites;
 
         public static Texture2D LoadMapTexture()
         {
-            return Resources.Load<Texture2D>("Omsk/map");
+            return Resources.Load<Texture2D>("Omsk/city-map") ?? Resources.Load<Texture2D>("Omsk/map");
+        }
+
+        public static Vector3 PositionAt(double lon, double lat, float height = 0f)
+        {
+            return new Vector3((float)((lon-OriginLongitude)*EastMeters),height,
+                (float)((lat-OriginLatitude)*NorthMeters));
         }
 
         public static Vector2 MapPosition(Vector3 position)
@@ -211,39 +225,74 @@ namespace LifeCraft.World
             SetViewDistance(false);
             MakeMaterials();
             MakeGround();
-            var index = Resources.Load<TextAsset>("Omsk/tiles");
-            if (!index)
+            landmarks = new OmskLandmarks(transform);
+            ReadManifest("Omsk/Detail/tiles",detailManifest);
+            if (!ReadManifest("Omsk/tiles",manifest))
             {
                 Debug.LogError("Omsk/tiles is missing. Import the bundled Omsk GIS tiles.", this);
                 return;
             }
-            foreach (var line in index.text.Split(new[] { '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries))
-            {
-                var parts = line.Split('_');
-                if (parts.Length == 2 && int.TryParse(parts[0], out var x) && int.TryParse(parts[1], out var y))
-                    manifest.Add(new Vector2Int(x, y));
-            }
-            Resources.UnloadAsset(index);
             center = TileAt(FocusPosition());
             var start = Resources.Load<TextAsset>(ResourcePath(center));
             if (start)
                 Consume(center, start);
+            landmarks.Refresh(FocusPosition(),reducedDetail);
+        }
+
+        private static bool ReadManifest(string path, HashSet<Vector2Int> destination)
+        {
+            var index = Resources.Load<TextAsset>(path);
+            if (!index)
+                return false;
+            foreach (var line in index.text.Split(new[] { '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                var parts = line.Split('_');
+                if (parts.Length == 2 && int.TryParse(parts[0], out var x) && int.TryParse(parts[1], out var y))
+                    destination.Add(new Vector2Int(x,y));
+            }
+            Resources.UnloadAsset(index);
+            return true;
+        }
+
+        internal bool PrepareVisit(OmskLandmarks.Site destination)
+        {
+            Vector2Int key = TileAt(destination.Arrival);
+            if (!tiles.ContainsKey(key))
+            {
+                var asset = Resources.Load<TextAsset>(ResourcePath(key));
+                if (!asset)
+                    return false;
+                Consume(key,asset);
+                if (!tiles.ContainsKey(key))
+                    return false;
+            }
+            if (!landmarks.Show(destination))
+                return false;
+            center = key;
+            CullDistant();
+            refreshAt = 0f;
+            return true;
         }
 
         private void Update()
         {
-            if (Time.unscaledTime < refreshAt && request == null)
+            if (Time.unscaledTime < refreshAt && request == null && detailRequest == null)
                 return;
-            center = TileAt(FocusPosition());
+            Vector3 focus = FocusPosition();
+            center = TileAt(focus);
+            landmarks.Refresh(focus,reducedDetail);
             if (request != null)
             {
                 if (!request.isDone)
+                {
+                    UpdateDetails();
                     return;
+                }
                 var asset = request.asset as TextAsset;
                 request = null;
                 if (asset)
                 {
-                    if (Distance(requested, center) <= radius + 1)
+                    if (Distance(requested, center) <= radius + 1 && !tiles.ContainsKey(requested))
                         Consume(requested, asset);
                     else
                         Resources.UnloadAsset(asset);
@@ -254,6 +303,7 @@ namespace LifeCraft.World
                 }
             }
             CullDistant();
+            UpdateDetails();
             Vector2Int candidate = default;
             int nearest = int.MaxValue;
             for (int z = -radius; z <= radius; z++)
@@ -274,6 +324,74 @@ namespace LifeCraft.World
                 request = Resources.LoadAsync<TextAsset>(ResourcePath(requested));
             }
             refreshAt = Time.unscaledTime + refreshSeconds;
+        }
+
+        private void UpdateDetails()
+        {
+            int maxDistance = reducedDetail ? 0 : 1;
+            if (detailRequest != null)
+            {
+                if (!detailRequest.isDone)
+                    return;
+                var asset = detailRequest.asset as TextAsset;
+                detailRequest = null;
+                if (asset)
+                {
+                    if (Distance(requestedDetail,center) <= maxDistance &&
+                        tiles.TryGetValue(requestedDetail,out Tile tile))
+                        ConsumeDetails(requestedDetail,tile,asset);
+                    else
+                        Resources.UnloadAsset(asset);
+                }
+                else
+                    failedDetails.Add(requestedDetail);
+            }
+
+            int nearest = int.MaxValue;
+            Vector2Int candidate = default;
+            foreach (var item in tiles)
+            {
+                Vector2Int key = item.Key;
+                if (item.Value.ExtraDetails || !detailManifest.Contains(key) || failedDetails.Contains(key)
+                    || Distance(key,center) > maxDistance)
+                    continue;
+                int dx = key.x-center.x, dz = key.y-center.y;
+                int distance = dx*dx+dz*dz;
+                if (distance < nearest)
+                {
+                    candidate = key;
+                    nearest = distance;
+                }
+            }
+            if (nearest == int.MaxValue)
+                return;
+            requestedDetail = candidate;
+            detailRequest = Resources.LoadAsync<TextAsset>("Omsk/Detail/"+candidate.x+"_"+candidate.y);
+        }
+
+        private void ConsumeDetails(Vector2Int key,Tile tile,TextAsset asset)
+        {
+            try
+            {
+                var groups = ReadGroups(asset.bytes);
+                tile.ExtraDetails = new GameObject("Омск · детали улиц");
+                tile.ExtraDetails.transform.SetParent(tile.Object.transform,false);
+                tile.ExtraDetailMesh = MakeDisplay(tile.ExtraDetails,groups,null,out var detailRenderer);
+                detailRenderer.shadowCastingMode = ShadowCastingMode.Off;
+            }
+            catch (Exception error)
+            {
+                if (tile.ExtraDetails)
+                    Destroy(tile.ExtraDetails);
+                if (tile.ExtraDetailMesh)
+                    Destroy(tile.ExtraDetailMesh);
+                failedDetails.Add(key);
+                Debug.LogError("Omsk detail tile "+key+": "+error.Message,this);
+            }
+            finally
+            {
+                Resources.UnloadAsset(asset);
+            }
         }
 
         private static Vector2Int TileAt(Vector3 p)
@@ -320,7 +438,7 @@ namespace LifeCraft.World
                     m.SetFloat("_Metallic", i == 15 ? .24f : 0f);
                 if (TextureByStyle[i] != null)
                 {
-                    float repeat = i == 18 || i <= 3 ? 7f : i == 12 ? 2.4f : 4.5f;
+                    float repeat = i == 17 ? 1.6f : i == 18 || i <= 3 ? 7f : i == 12 ? 2.4f : 4.5f;
                     LifeCraftRP.StreetMaterials.Apply(m,TextureByStyle[i],1f/repeat,1f/repeat);
                 }
                 materials[i] = m;
@@ -444,7 +562,7 @@ namespace LifeCraft.World
             }
         }
 
-        private Mesh MakeDisplay(GameObject targetObject, List<Group> groups, bool detail, out MeshRenderer renderer)
+        private Mesh MakeDisplay(GameObject targetObject, List<Group> groups, bool? detail, out MeshRenderer renderer)
         {
             var points = new List<Vector3>();
             var uv = new List<Vector2>();
@@ -453,7 +571,7 @@ namespace LifeCraft.World
             var origin = targetObject.transform.position;
             foreach (var group in groups)
             {
-                if (group.Detail != detail)
+                if (detail.HasValue && group.Detail != detail.Value)
                     continue;
                 if (group.Style >= 10 && group.Style <= 13)
                     partIndices.Add(ProjectWalls(group,origin,points,uv));
@@ -477,7 +595,7 @@ namespace LifeCraft.World
                 mesh.SetTriangles(partIndices[i], i, false);
             mesh.RecalculateBounds();
             mesh.RecalculateNormals();
-            if (!detail && points.Count > 0)
+            if (detail != true && points.Count > 0)
                 mesh.RecalculateTangents();
             targetObject.AddComponent<MeshFilter>().sharedMesh = mesh;
             renderer = targetObject.AddComponent<MeshRenderer>();
@@ -520,6 +638,8 @@ namespace LifeCraft.World
             tile.Object.SetActive(distance <= radius);
             if (tile.Decorations)
                 tile.Decorations.SetActive(distance <= (reducedDetail ? 0 : 1));
+            if (tile.ExtraDetails)
+                tile.ExtraDetails.SetActive(distance <= (reducedDetail ? 0 : 1));
             tile.Renderer.shadowCastingMode = reducedDetail ? ShadowCastingMode.Off : ShadowCastingMode.On;
             if (tile.Collider)
             {
@@ -560,16 +680,21 @@ namespace LifeCraft.World
                 Destroy(tile.Display);
             if (tile.DecorationMesh)
                 Destroy(tile.DecorationMesh);
+            if (tile.ExtraDetailMesh)
+                Destroy(tile.ExtraDetailMesh);
             if (tile.Collision)
                 Destroy(tile.Collision);
         }
 
         private void OnDestroy()
         {
+            landmarks?.Dispose();
             foreach (var item in tiles)
                 DestroyTile(item.Value);
             if (request != null && request.isDone && request.asset)
                 Resources.UnloadAsset(request.asset);
+            if (detailRequest != null && detailRequest.isDone && detailRequest.asset)
+                Resources.UnloadAsset(detailRequest.asset);
             if (ground)
                 Destroy(ground);
             if (groundMesh)

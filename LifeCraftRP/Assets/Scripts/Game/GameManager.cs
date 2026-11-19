@@ -424,6 +424,31 @@ namespace LifeCraftRP
 
         public void Open(string mode) => ui.Open(mode);
 
+        internal bool VisitOmskLandmark(OmskLandmarks.Site site)
+        {
+            if (Online || Network.IsConnecting)
+            {
+                Notify("Быстрый переход доступен в одиночной игре.");
+                return false;
+            }
+            if (Vehicles.IsDriving || Player.Animation.Carrying)
+            {
+                Notify("Для перехода выйдите из машины или завершите перенос груза.");
+                return false;
+            }
+            if (!World.PrepareVisit(site))
+            {
+                Notify("Пока не удалось загрузить это место.");
+                return false;
+            }
+            Player.Teleport(site.Arrival);
+            Player.transform.rotation = Quaternion.Euler(0f,site.heading,0f);
+            Player.View.Align(site.heading);
+            SaveProgress();
+            Notify(site.name+" · "+site.address);
+            return true;
+        }
+
         public void OpenService(string mode)
         {
             if (Online)

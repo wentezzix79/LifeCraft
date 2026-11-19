@@ -158,23 +158,31 @@ class Geometry:
 
 
 class City:
-    def __init__(self):
+    def __init__(self, selected_tiles=None):
         self.chunks = defaultdict(Geometry)
         self.count = Counter()
         self.cartography = []
         self.districts = []
+        self.selected_tiles = selected_tiles
+
+    def selected(self, key):
+        return self.selected_tiles is None or key in self.selected_tiles
 
     def poly(self, style, verts, assigned=None):
         if assigned is not None:
-            self.chunks[assigned].add(style,verts)
+            if self.selected(assigned):
+                self.chunks[assigned].add(style,verts)
             return
         lo = tile(min(p[0] for p in verts)),tile(min(p[2] for p in verts))
         hi = tile(max(p[0] for p in verts)),tile(max(p[2] for p in verts))
         if lo == hi:
-            self.chunks[lo].add(style,verts)
+            if self.selected(lo):
+                self.chunks[lo].add(style,verts)
             return
         for i in range(lo[0],hi[0]+1):
             for j in range(lo[1],hi[1]+1):
+                if not self.selected((i,j)):
+                    continue
                 clipped = clip_tile(verts,i,j)
                 if clipped:
                     self.chunks[i,j].add(style,clipped)
@@ -207,6 +215,8 @@ class City:
         style = WALL_STYLES.get(kind,WALL)
         center = ((minx+maxx)/2,(minz+maxz)/2)
         chunk = tile(center[0]),tile(center[1])
+        if not self.selected(chunk):
+            return
         pts,tris = triangulate(rings)
         self.flat(ROOF,pts,tris,top,chunk)
         detail = math.hypot(*center) < 1350 and 5 <= top-base <= 46 and length > 70
@@ -381,7 +391,7 @@ class City:
             elif shape == "LineString" and layer != "building":
                 self.line(layer,item,f["properties"])
 
-    def export(self, path):
+    def export_tiles(self, path):
         manifest = []
         for (i,j),geometry in sorted(self.chunks.items()):
             groups = [(key,value) for key,value in sorted(geometry.groups.items()) if value[1]]
@@ -404,7 +414,14 @@ class City:
             key = f"{i}_{j}"
             (path/(key+".bytes")).write_bytes(gzip.compress(buffer.getvalue(),compresslevel=6,mtime=0))
             manifest.append(key)
-        (path/"tiles.txt").write_text("\n".join(manifest)+"\n")
+        if self.selected_tiles is None:
+            (path/"tiles.txt").write_text("\n".join(manifest)+"\n")
+        return len(manifest)
+
+    def export(self, path):
+        total = self.export_tiles(path)
+        if self.selected_tiles is not None:
+            return total
         self.draw_map(path/"map.png")
         districts = [{"name": name, "polygons": [
                 {"rings":[{"xz": [round(v,1) for point in ring for v in point]} for ring in rings]}
@@ -421,7 +438,7 @@ class City:
             "Transformed to a local metre grid and clipped into streaming meshes. "
             "Buildings in the fictional start facility footprint have been removed.\n",
             encoding="utf-8")
-        return len(manifest)
+        return total
 
     def draw_map(self,path):
         width,height = 1024,1280
@@ -476,16 +493,29 @@ class City:
         path.write_bytes(data+chunk(b"IEND",b""))
 
 
+def tile_key(value):
+    if not re.fullmatch(r"-?\d+_-?\d+", value):
+        raise argparse.ArgumentTypeError("tile format is x_z (e.g. 2_-3)")
+    return tuple(map(int,value.split("_")))
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("input",type=Path)
     parser.add_argument("output",type=Path)
+    parser.add_argument("--tile", action="append", type=tile_key,
+                        help="replace only this tile; repeat for multiple tiles; preserve the master index")
+    parser.add_argument("--exclude-building-ids", nargs="+", default=(),
+                        help="OSM building IDs (like way/123) supplied by detailed landmark meshes")
     args = parser.parse_args(sys.argv[sys.argv.index("--")+1:])
     args.output.mkdir(parents=True,exist_ok=True)
     with gzip.open(args.input,"rt",encoding="utf-8") as stream:
         features = json.load(stream)["features"]
-    city = City()
+    city = City(set(args.tile) if args.tile else None)
+    exclusions = set(args.exclude_building_ids)
     for feature in features:
+        if feature.get("id") in exclusions and feature["properties"].get("_layer") == "building":
+            continue
         city.feature(feature)
     total = city.export(args.output)
     print(f"Exported {total:,} Omsk tiles.", dict(city.count), flush=True)
