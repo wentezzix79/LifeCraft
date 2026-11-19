@@ -12,6 +12,8 @@
 - У «МЕГИ» внешние парковочные площадки нанесены по 11 контурам OpenStreetMap, их внутренняя разметка воссоздана по масштабу площадок. Красная велодорожка и подходы вдоль бульвара используют линии OpenStreetMap. Геометрия столбов и контактной сети соответствует типу инфраструктуры в фотоотчётах. [Фото фасада и парковки](https://omsk.rbc.ru/omsk/04/08/2025/6890a54e9a794710e661a875) · [Осмотр бульвара в июле 2026 года](https://ngs55.ru/text/transport/2026/07/31/76561499/) · [Фото дорожек](https://omskinform.ru/news/209599)
 - У парка учтены вид восстановленной входной группы, появление фотобудки и завершение работ у фонтана на главной аллее в октябре 2026 года. [Входная группа](https://m.bk55.ru/news/article/247487/) · [Фотобудка](https://newsomsk.ru/news/164939-momentalne_snimki_teper_mojno_sdelat_echshe_v_odno/) · [Ремонт фонтана](https://newsomsk.ru/news/164418-v_omskom_parke_otkrli_fontan_posle_remonta/)
 
+По предоставленным фотографиям перестроены стеклянная башня входа № 2 «МЕГИ», площадка с флажками и парковочная стела. У ТЦ «Парк» воспроизведены высокая оранжевая рама, узкие полосы облицовки, вывески арендаторов и знак на крыше. Текстуры знаков нарисованы по фотографиям и хранятся отдельно от геометрии. Масштаб элементов оценён по видимым пропорциям. Стела размещена приблизительно на ограниченном дорогами островке на западной стороне комплекса.
+
 В игре откройте карту клавишей **M** или экранной кнопкой. Выберите место в верхнем ряду. Кнопка **Посетить** перемещает к входу в одиночной игре. Карта и сами локации доступны и в сетевой игре при передвижении по городу.
 
 ## Сборка картографических ресурсов
@@ -22,6 +24,7 @@
 python Tools/build_omsk_map.py --landmark-maps
 python Tools/build_omsk_landmarks.py
 python Tools/build_omsk_landmark_streets.py
+python Tools/build_omsk_mall_signs.py
 python Tools/build_omsk_park.py SourceData/omsk.geojson.gz Assets/Resources/Omsk/ParkLayout.json
 blender -b --python-exit-code 1 -P Tools/build_omsk.py -- SourceData/omsk.geojson.gz Assets/Resources/Omsk --tile=-14_0 --tile=3_0 --exclude-building-ids way/61367812 way/814296045
 blender -b --python-exit-code 1 -P Tools/build_omsk_detail.py -- SourceData/omsk.geojson.gz Assets/Resources/Omsk/Detail

@@ -62,7 +62,7 @@ namespace LifeCraft.World
                 var frame = new Face(ring[i],ring[(i+1)%ring.Count]);
                 if (i == front)
                 {
-                    float portalWidth = Mathf.Min(frame.Length-4f,mega ? 34f : 28f);
+                    float portalWidth = Mathf.Min(frame.Length-4f,mega ? 14.4f : 28f);
                     float mid = Mathf.Clamp(doorCentre,portalWidth*.5f+1f,frame.Length-portalWidth*.5f-1f);
                     float left = mid-portalWidth*.5f, right = mid+portalWidth*.5f;
                     Wall(model,frame,0f,left,height,mega,i);
@@ -70,7 +70,11 @@ namespace LifeCraft.World
                     if (mega)
                         MegaEntrance(model,frame,mid,portalWidth,height);
                     else
+                    {
                         ParkEntrance(model,frame,mid,portalWidth,height);
+                        float roofSignX=Mathf.Min(mid+portalWidth*.95f,frame.Length-7.2f);
+                        OmskMallSigns.ParkRoof(root,frame.At(roofSignX,19.12f,.82f),frame.Normal,13.1f);
+                    }
                     Lobby(model,frame,mid,mega);
                 }
                 else
@@ -107,89 +111,113 @@ namespace LifeCraft.World
 
             if (mega)
             {
-                model.Box(frame,Finish.Concrete,left,right,MegaDeck-.32f,MegaDeck+.14f,-.24f,.12f);
-                model.Box(frame,Finish.Trim,left,right,8.78f,9.04f,-.05f,.12f);
-                model.Box(frame,Finish.SheetShade,left,right,12.15f,13.53f,-.01f,.07f);
-                int grids = Mathf.Max(1,Mathf.FloorToInt(width/5.2f));
-                for (int i=1;i<grids;i++)
-                {
-                    float x = left+width*i/grids;
-                    model.Box(frame,Finish.Trim,x-.025f,x+.025f,MegaDeck+.21f,12.13f,.025f,.078f);
-                }
-                model.Box(frame,Finish.Sheet,left,right,13.55f,13.64f,-.03f,.11f);
+                MegaWing(model,frame,left,right,height);
                 return;
             }
-            model.Box(frame,Finish.SheetShade,left,right,Ground,1.18f,-.06f,.135f);
-            model.Box(frame,Finish.Trim,left,right,4.56f,4.76f,-.08f,.13f);
-            model.Box(frame,Finish.Trim,left,right,12.1f,12.28f,-.05f,.09f);
-            int panels = Mathf.Max(1,Mathf.CeilToInt(width/2.25f));
-            for (int col=0;col<panels;col++)
+            model.Box(frame,Finish.SheetShade,left,right,Ground,.83f,-.06f,.15f);
+            model.Box(frame,Finish.Trim,left,right,4.23f,4.40f,-.08f,.13f);
+            model.Box(frame,Finish.ParkOrange,left,right,16.67f,16.88f,-.04f,.19f);
+            int windows = Mathf.Max(1,Mathf.CeilToInt(width/1.85f));
+            for (int col=0;col<windows;col++)
             {
-                float x0 = left+width*col/panels;
-                float x1 = left+width*(col+1)/panels;
+                float x0 = left+width*col/windows;
+                float x1 = left+width*(col+1)/windows;
                 Finish glass = (col+side)%4 == 0 ? Finish.GlassShade : Finish.Glass;
-                model.Box(frame,glass,x0+.036f,x1-.036f,1.22f,4.50f,.006f,.09f);
-                model.Box(frame,Finish.Trim,x0+.016f,x0+.069f,1.16f,4.61f,.041f,.111f);
+                model.Box(frame,glass,x0+.027f,x1-.027f,.86f,4.23f,.006f,.095f);
+                model.Box(frame,Finish.Trim,x0+.012f,x0+.067f,.81f,4.25f,.04f,.124f);
+            }
+            model.Box(frame,Finish.Aluminium,left,right,2.52f,2.58f,.064f,.122f);
+            ParkMosaic(model,frame,left,right,4.43f,16.61f,side);
+        }
 
-                for (int row=0;row<5;row++)
+        private static void ParkMosaic(Building model,Face frame,float left,float right,float bottom,float top,int face)
+        {
+            int rows = Mathf.CeilToInt((top-bottom)/.48f);
+            for (int row=0;row<rows;row++)
+            {
+                float y0=Mathf.Lerp(bottom,top,row/(float)rows);
+                float y1=Mathf.Lerp(bottom,top,(row+1)/(float)rows);
+                float x = left;
+                for (int col=0;x<right-.012f;col++)
                 {
-                    float y = 5.07f+row*1.36f;
-                    Finish color = ParkPanel(col,row,side);
-                    model.Box(frame,color,x0+.027f,x1-.027f,y,y+1.305f,0,.103f);
+                    int pattern=(col*19+row*11+col*row*7+face*23)%37;
+                    float panelWidth=.74f+(pattern%6)*.29f;
+                    float next=Mathf.Min(x+panelWidth,right);
+                    model.ParkCladdingFace(frame,ParkPanel(pattern),x+.009f,next-.009f,
+                        y0+.010f,y1-.010f,.092f+(pattern%3)*.009f);
+                    x=next;
                 }
-                if ((col+2*side)%3 == 0)
-                    model.Box(frame,glass,x0+.23f,x1-.23f,13.20f,15.23f,.007f,.073f);
             }
         }
 
-        private static Finish ParkPanel(int column,int row,int face)
+        private static Finish ParkPanel(int index)
         {
-            // Irregular staggered panels on the Maslennikova facade.
-            int index = (column*19+row*7+column*row*3+face*11)%31;
-            if (index < 4) return Finish.ParkRust;
-            if (index < 7) return Finish.ParkLemon;
-            if (index < 12) return Finish.ParkSand;
-            if (index < 18) return Finish.Sheet;
-            return index < 25 ? Finish.SheetShade : Finish.ParkWall;
+            if (index < 2) return Finish.ParkBurgundy;
+            if (index < 6) return Finish.ParkRust;
+            if (index < 8) return Finish.ParkTerracotta;
+            if (index < 10) return Finish.ParkLemon;
+            if (index < 15) return Finish.ParkSand;
+            if (index < 19) return Finish.ParkOchre;
+            if (index < 24) return Finish.Sheet;
+            return index < 32 ? Finish.SheetShade : Finish.ParkWall;
         }
 
         private static void ParkEntrance(Building model,Face frame,float mid,float width,float height)
         {
             float left = mid-width*.5f, right = mid+width*.5f;
-            model.Box(frame,Finish.ParkWall,left,right,8.06f,height,-.30f,0,true);
-            model.Box(frame,Finish.ParkOrange,left-.36f,right+.36f,13.85f,14.91f,-.15f,.76f);
+            model.Box(frame,Finish.ParkWall,left,right,16.12f,height,-.30f,0,true);
+            model.Box(frame,Finish.ParkOrange,left-.66f,right+.66f,16.25f,17.95f,-.42f,.83f);
             for (int side=-1;side<=1;side+=2)
             {
                 float x = mid+side*width*.5f;
-                model.Box(frame,Finish.ParkOrange,x-.36f,x+.36f,Ground,14.88f,-.28f,.74f);
-                model.Box(frame,Finish.ParkOrange,x-.28f,x+.28f,15.32f,16.6f,-.11f,.42f);
+                model.Box(frame,Finish.ParkOrange,x-.63f,x+.63f,Ground,17.90f,-.37f,.81f);
+                model.Box(frame,Finish.ParkTerracotta,x-.62f,x-.55f,Ground+.05f,16.24f,.815f,.854f);
             }
-            model.Box(frame,Finish.Trim,left,right,4.47f,4.71f,-.68f,3.18f);
-            model.Box(frame,Finish.ParkOrange,left-.22f,right+.22f,4.68f,5.10f,2.85f,3.30f);
-            model.Box(frame,Finish.Ceiling,left+.35f,right-.35f,4.451f,4.477f,0f,2.83f);
-            model.Box(frame,Finish.GlassShade,left,right,5.14f,8.08f,-.14f,.035f);
-            for (int k=1;k<12;k++)
+            model.Box(frame,Finish.Trim,left,right,4.46f,4.61f,-.68f,2.98f);
+            model.Box(frame,Finish.ParkOrange,left-.44f,right+.44f,4.59f,4.81f,2.79f,3.05f);
+            model.Box(frame,Finish.Ceiling,left+.43f,right-.43f,4.424f,4.453f,0f,2.77f);
+            model.Box(frame,Finish.ParkPale,left+.55f,right-.55f,4.83f,7.05f,-.16f,.11f);
+            for (int bay=0;bay<14;bay++)
             {
-                float x = left+k*width/12f;
-                model.Box(frame,Finish.Trim,x-.041f,x+.041f,5.12f,8.14f,.015f,.093f);
+                float x0=Mathf.Lerp(left+.55f,right-.55f,bay/14f);
+                float x1=Mathf.Lerp(left+.55f,right-.55f,(bay+1)/14f);
+                for (int row=0;row<5;row++)
+                {
+                    float y0=Mathf.Lerp(7.05f,16.24f,row/5f);
+                    float y1=Mathf.Lerp(7.05f,16.24f,(row+1)/5f);
+                    Finish glass=(bay*3+row*7)%13<4 ? Finish.GlassShade : Finish.Glass;
+                    model.Box(frame,glass,x0+.022f,x1-.022f,y0+.025f,y1-.025f,-.065f,.10f);
+                }
+                model.Box(frame,Finish.Aluminium,x0-.030f,x0+.030f,4.82f,16.24f,.086f,.157f);
             }
-            int bays = Mathf.Max(1,Mathf.CeilToInt(width/2.19f));
-            for (int col=0;col<bays;col++)
-            for (int row=0;row<4;row++)
+            for (int row=0;row<5;row++)
             {
-                float x0=left+width*col/bays, x1=left+width*(col+1)/bays;
-                float y=8.14f+row*1.29f;
-                model.Box(frame,ParkPanel(col,row,0),x0+.035f,x1-.035f,y,y+1.236f,.005f,.11f);
+                float y=Mathf.Lerp(7.05f,16.24f,row/5f);
+                model.Box(frame,Finish.Aluminium,left+.55f,right-.55f,y-.037f,y+.037f,.094f,.169f);
             }
-            // The upper facade is a tenant rail set in front of the panel mosaic.
-            model.Box(frame,Finish.Trim,left+.53f,right-.53f,9.54f,9.61f,.14f,.26f);
-            model.Box(frame,Finish.Trim,left+.53f,right-.53f,10.78f,10.85f,.14f,.26f);
-            ParkTenant(model,frame,"kari",mid+width*.360f,10.20f,2.15f,Finish.ParkRust,.58f);
-            ParkTenant(model,frame,"SOKOLOV",mid+width*.194f,10.20f,3.18f,Finish.Trim,.54f);
-            ParkTenant(model,frame,"COFFEE ANYTIME",mid+width*.014f,10.20f,4.20f,Finish.ParkWall,.36f);
-            ParkTenant(model,frame,"ДЕТСКИЙ МИР",mid-width*.193f,10.20f,4.76f,Finish.ParkBlue,.47f);
-            ParkTenant(model,frame,"ZARINA",mid-width*.388f,10.20f,2.72f,Finish.Trim,.57f);
-            model.Sign(frame,"ПАРК",mid+width*.27f,12.65f,.20f,1.49f,White);
+            float leftWing=frame.Length-right;
+            float rightWing=left;
+            ParkTenant(model,frame,"kari ГИПЕР",right+leftWing*.57f,13.21f,leftWing*.42f,Finish.ParkBurgundy,.78f);
+            ParkTenant(model,frame,"COFFEE ANYTIME",right+leftWing*.72f,11.52f,leftWing*.45f,Finish.SheetShade,.47f);
+            ParkTenant(model,frame,"ЭКСПРЕСС СУШИ",right+leftWing*.27f,11.43f,leftWing*.42f,Finish.ParkBurgundy,.48f);
+            ParkTenant(model,frame,"ФАРМАКОПЕЙКА",right+leftWing*.63f,9.70f,leftWing*.51f,Finish.ParkGreen,.52f);
+            ParkTenant(model,frame,"KOREANBULL",right+leftWing*.31f,7.49f,leftWing*.43f,Finish.Trim,.56f);
+            ParkTenant(model,frame,"DOSMARCO",rightWing*.66f,12.40f,rightWing*.59f,Finish.ParkWall,.57f);
+            ParkTenant(model,frame,"ЭКОНОМ",rightWing*.31f,10.74f,rightWing*.53f,Finish.ParkBlue,.58f);
+            ParkTenant(model,frame,"РОССЮВЕЛИРТОРГ",rightWing*.54f,8.80f,rightWing*.87f,Finish.ParkBurgundy,.46f);
+            for (int floor=0;floor<2;floor++)
+            {
+                float y = 8.89f+3.58f*floor;
+                model.Box(frame,Finish.Ceiling,left+.45f,right-.45f,y,y+.17f,-5.5f,-.25f);
+                model.Box(frame,Finish.SheetShade,left+.45f,right-.45f,y+.19f,y+.50f,-.28f,-.23f);
+            }
+            float grilleX=right+leftWing*.45f;
+            model.Box(frame,Finish.Aluminium,grilleX-2.8f,grilleX+2.8f,height-.03f,height+.81f,-4.95f,-3.12f);
+            for (int grille=0;grille<4;grille++)
+            {
+                float y=height+.11f+grille*.15f;
+                model.Box(frame,Finish.Trim,grilleX-2.7f,grilleX+2.7f,y,y+.052f,-3.16f,-3.10f);
+            }
             model.Sign(frame,"МАСЛЕННИКОВА, 134",mid,5.37f,.225f,.30f,White);
             GlazedDoor(model,frame,mid,width,4.47f);
             Forecourt(model,frame,mid,width,6.0f);
@@ -205,57 +233,107 @@ namespace LifeCraft.World
         private static void MegaEntrance(Building model,Face frame,float mid,float width,float height)
         {
             float left = mid-width*.5f, right = mid+width*.5f;
-            const float glassTop = 12.62f;
-            model.Box(frame,Finish.SheetShade,left,right,glassTop,height,-.39f,0f,true);
-            model.Box(frame,Finish.Aluminium,left-.43f,right+.43f,12.55f,12.86f,-.18f,.76f);
-            int columns = Mathf.Max(10,Mathf.RoundToInt(width/1.93f));
+            const float glassBottom = 4.05f, glassTop = 20.79f, glazing = .82f;
+            const int columns = 9, rows = 9;
+            const float upright = .085f;
+            float paneHeight=(glassTop-glassBottom)/rows;
+            model.Box(frame,Finish.MegaPanel,left-.27f,right+.27f,glassTop,21.42f,-6.75f,1.16f);
+            for (int side=-1;side<=1;side+=2)
+            {
+                float edge = mid+side*width*.5f;
+                model.Box(frame,Finish.MegaPanel,edge-.24f,edge+.24f,glassBottom,glassTop,-6.75f,glazing+.16f);
+                model.Box(frame,Finish.MegaPanel,edge-.18f,edge+.18f,MegaDeck-.24f,glassBottom+.43f,-.28f,1.08f);
+            }
+            model.Box(frame,Finish.MegaPanel,left,right,height-.14f,glassTop,-6.58f,-6.34f);
+            model.Box(frame,Finish.Ceiling,left+.22f,right-.22f,20.34f,20.43f,-6.45f,glazing-.11f);
             for (int col=0;col<columns;col++)
             {
                 float x0=left+col*width/columns, x1=left+(col+1)*width/columns;
-                float paneHeight=(glassTop-4.19f)/4f;
-                for (int row=0;row<4;row++)
+                for (int row=0;row<rows;row++)
                 {
-                    float y=4.19f+row*paneHeight;
-                    Finish glass=(col*7+row*3)%9 < 2 ? Finish.GlassShade : Finish.Glass;
-                    model.Box(frame,glass,x0+.038f,x1-.038f,y+.025f,y+paneHeight-.025f,-.137f,.002f);
+                    float y=glassBottom+row*paneHeight;
+                    Finish glass=(col+row*3)%11 < 3 ? Finish.GlassShade : Finish.Glass;
+                    model.Box(frame,glass,x0+.047f,x1-.047f,y+.047f,y+paneHeight-.047f,glazing-.045f,glazing+.045f);
                 }
-                model.Box(frame,col%4==0?Finish.Aluminium:Finish.Trim,
-                    x0-.042f,x0+.042f,4.11f,glassTop,.025f,.162f);
+                model.Box(frame,Finish.Aluminium,x0-upright*.5f,x0+upright*.5f,
+                    glassBottom,glassTop,glazing-.23f,glazing+.11f);
             }
-            model.Box(frame,Finish.Aluminium,right-.046f,right+.046f,4.11f,glassTop,.025f,.162f);
-            for (int row=1;row<4;row++)
+            model.Box(frame,Finish.Aluminium,right-upright*.5f,right+upright*.5f,
+                glassBottom,glassTop,glazing-.23f,glazing+.11f);
+            for (int row=0;row<=rows;row++)
             {
-                float y=4.19f+row*(glassTop-4.19f)/4f;
-                model.Box(frame,Finish.Trim,left,right,y-.042f,y+.042f,.023f,.143f);
+                float y=glassBottom+row*paneHeight;
+                model.Box(frame,Finish.Aluminium,left,right,y-.043f,y+.043f,glazing-.19f,glazing+.105f);
             }
-            // Pale primary steel struts are visible through the full-height glazing.
-            for (int bay=0;bay<6;bay++)
-            {
-                float x0=left+bay*width/6f, x1=left+(bay+1)*width/6f;
-                model.Box(frame,Finish.Aluminium,x0-.084f,x0+.084f,4.30f,glassTop,-.78f,-.48f);
-                for (int k=0;k<2;k++)
-                    model.Brace(frame,Finish.Aluminium,x0,4.39f+k*4.02f,x1,8.24f+k*4.02f,-.53f,.081f);
-            }
-            model.Box(frame,Finish.Aluminium,left-.88f,right+.88f,4.20f,4.59f,-.85f,3.90f);
-            model.Box(frame,Finish.Ceiling,left+.12f,right-.12f,4.17f,4.223f,0f,3.7f);
-            string glyphs = "МЕГА";
-            var colors = new[]{new Color(.91f,.21f,.19f),new Color(.22f,.70f,.32f),
-                new Color(.22f,.50f,.84f),new Color(.97f,.66f,.15f)};
-            for (int j=0;j<4;j++)
-                model.Sign(frame,glyphs[j].ToString(),mid+(1.5f-j)*3.18f,14.03f,.36f,2.36f,colors[j]);
-            model.Sign(frame,"ВХОД",mid,4.40f,3.95f,.43f,White);
-            model.Sign(frame,"БУЛЬВАР АРХИТЕКТОРОВ, 35",mid,3.79f,3.96f,.24f,White);
-            GlazedDoor(model,frame,mid,width,4.17f);
+            model.Box(frame,Finish.SheetShade,left-.39f,right+.39f,3.67f,4.20f,-.29f,4.28f);
+            model.Box(frame,Finish.Aluminium,left-.41f,right+.41f,3.65f,3.73f,4.23f,4.30f);
+            model.Box(frame,Finish.Ceiling,left+.08f,right-.08f,3.63f,3.69f,.37f,4.25f);
+            model.Sign(frame,"Вход 2",mid,3.94f,4.34f,.54f,White);
+            MegaVestibule(model,frame,mid,width);
             Forecourt(model,frame,mid,width,7.6f);
-            for (int side=-1;side<=1;side+=2)
+            OmskMallSigns.MegaRoof(model.Root,frame.At(mid,23.55f,1.42f),frame.Normal,13f);
+            const float wingSignWidth=10.2f, wingSignMargin=5.50f;
+            float auchan = Mathf.Min(29f,frame.Length-mid-wingSignMargin);
+            float mvideo = Mathf.Min(29f,mid-wingSignMargin);
+            if (auchan > width*.5f+wingSignMargin)
+                OmskMallSigns.MegaWing(model.Root,frame.At(mid+auchan,16.83f,.48f),frame.Normal,wingSignWidth,true);
+            if (mvideo > width*.5f+wingSignMargin)
+                OmskMallSigns.MegaWing(model.Root,frame.At(mid-mvideo,16.83f,.48f),frame.Normal,wingSignWidth,false);
+            OmskMegaPlaza.Build(model.Root,model.Root.position+frame.At(mid,Ground,0f),frame.Normal);
+        }
+
+        private static void MegaWing(Building model,Face frame,float left,float right,float height)
+        {
+            float width=right-left;
+            model.Box(frame,Finish.MegaPanel,left,right,MegaDeck+.03f,height-.22f,-.05f,.047f);
+            model.Box(frame,Finish.SheetShade,left,right,MegaDeck-.36f,MegaDeck+.06f,-.22f,.15f);
+            model.Box(frame,Finish.Aluminium,left,right,height-.25f,height-.16f,-.07f,.07f);
+            int cells = Mathf.Max(1,Mathf.CeilToInt(width/4.12f));
+            for (int cell=1;cell<cells;cell++)
             {
-                float x=mid+side*(width*.5f-2.6f);
-                model.Box(frame,Finish.Trim,x-.085f,x+.085f,Ground,2.54f,5.23f,5.37f);
-                model.Box(frame,Finish.ParkGreen,x-.51f,x+.51f,1.72f,2.53f,5.1f,5.5f);
-                model.Sign(frame,side<0?"10О":"10Л",x,2.12f,5.54f,.43f,White);
-                model.Box(frame,Finish.Concrete,x-1.96f,x+1.96f,Ground,Ground+.31f,6.19f,7.15f);
-                model.Box(frame,Finish.Hedge,x-1.77f,x+1.77f,Ground+.27f,Ground+.88f,6.32f,7.02f);
+                float x=left+cell*width/cells;
+                model.Box(frame,Finish.Aluminium,x-.02f,x+.02f,MegaDeck+.06f,height-.25f,.047f,.073f);
             }
+            for (float y=MegaDeck+2.23f;y<height-.28f;y+=2.23f)
+                model.Box(frame,Finish.Aluminium,left,right,y-.023f,y+.023f,.047f,.073f);
+
+            int bays = Mathf.Max(1,Mathf.FloorToInt(width/8.7f));
+            model.Box(frame,Finish.Trim,left,right,3.78f,MegaDeck-.34f,-3.12f,-.22f);
+            for (int bay=1;bay<bays;bay++)
+            {
+                float x=left+bay*width/bays;
+                model.Box(frame,Finish.MegaPanel,x-.32f,x+.32f,Ground,3.77f,-.67f,-.24f);
+                model.Box(frame,Finish.Trim,x-.25f,x+.25f,Ground,3.72f,-3.39f,-2.77f);
+            }
+        }
+
+        private static void MegaVestibule(Building model,Face frame,float mid,float width)
+        {
+            GlazedDoor(model,frame,mid,width,3.63f);
+            for (int sign=-1;sign<=1;sign+=2)
+            {
+                // Side arcs frame an always-clear centre channel at the arrival heading.
+                const float sideRadius=2.43f, outwardRadius=1.50f, drumCentre=1.94f;
+                const float glassSill=Ground+.095f, glassHead=3.28f;
+                const int pieces=4;
+                for (int panel=0;panel<pieces;panel++)
+                {
+                    float a = -.66f+panel*1.32f/pieces, b = -.66f+(panel+1)*1.32f/pieces;
+                    float x0=mid+sign*sideRadius*Mathf.Cos(a), x1=mid+sign*sideRadius*Mathf.Cos(b);
+                    float z0=drumCentre+outwardRadius*Mathf.Sin(a), z1=drumCentre+outwardRadius*Mathf.Sin(b);
+                    model.FacadeStrip(frame,Finish.Glass,x0,z0,x1,z1,glassSill,glassHead);
+                    model.FacadeStrip(frame,Finish.Trim,x0,z0,x1,z1,glassSill-.071f,glassSill);
+                    model.FacadeStrip(frame,Finish.Trim,x0,z0,x1,z1,glassHead,glassHead+.072f);
+                    model.Box(frame,Finish.Aluminium,x0-.038f,x0+.038f,glassSill-.05f,glassHead+.072f,
+                        z0-.038f,z0+.038f);
+                }
+                float endX=mid+sign*sideRadius*Mathf.Cos(.66f);
+                float endZ=drumCentre+outwardRadius*Mathf.Sin(.66f);
+                model.Box(frame,Finish.Aluminium,endX-.038f,endX+.038f,
+                    glassSill-.05f,glassHead+.072f,endZ-.038f,endZ+.038f);
+            }
+            model.Box(frame,Finish.Trim,mid-2.61f,mid+2.61f,3.39f,3.56f,.57f,3.52f);
+            model.Box(frame,Finish.Aluminium,mid-1.70f,mid+1.70f,3.09f,3.34f,2.83f,3.11f);
         }
 
         private static void GlazedDoor(Building model, Face frame,float mid,float width,float top)
@@ -448,7 +526,8 @@ namespace LifeCraft.World
         private enum Finish
         {
             Concrete,Paving,Roof,ParkWall,ParkOrange,ParkOchre,ParkSand,Sheet,SheetShade,Trim,
-            Aluminium,Glass,GlassShade,Ceiling,ParkGreen,RoadMark,Asphalt,ParkRust,ParkLemon,ParkBlue,Hedge
+            Aluminium,Glass,GlassShade,Ceiling,ParkGreen,RoadMark,Asphalt,ParkRust,ParkLemon,ParkBlue,MegaPanel,
+            ParkBurgundy,ParkTerracotta,ParkPale
         }
 
         private static Material MaterialFor(Finish finish)
@@ -464,12 +543,15 @@ namespace LifeCraft.World
                 case Finish.Paving: color=new Color(.83f,.79f,.73f);texture="ConcretePavers";break;
                 case Finish.Roof: color=new Color(.48f,.48f,.45f);texture="WeatheredConcrete";break;
                 case Finish.ParkWall: color=new Color(.34f,.34f,.33f);break;
-                case Finish.ParkOrange: color=new Color(.88f,.30f,.075f);gloss=.39f;break;
+                case Finish.ParkOrange: color=new Color(.94f,.32f,.065f);gloss=.43f;break;
                 case Finish.ParkOchre: color=new Color(.64f,.45f,.31f);break;
                 case Finish.ParkSand: color=new Color(.65f,.59f,.52f);break;
-                case Finish.ParkRust: color=new Color(.58f,.225f,.16f);gloss=.27f;break;
-                case Finish.ParkLemon: color=new Color(.82f,.65f,.235f);gloss=.27f;break;
+                case Finish.ParkRust: color=new Color(.54f,.23f,.18f);gloss=.32f;break;
+                case Finish.ParkLemon: color=new Color(.70f,.54f,.33f);gloss=.32f;break;
                 case Finish.ParkBlue: color=new Color(.12f,.34f,.59f);gloss=.25f;break;
+                case Finish.ParkBurgundy: color=new Color(.32f,.125f,.126f);gloss=.37f;break;
+                case Finish.ParkTerracotta: color=new Color(.73f,.34f,.21f);gloss=.34f;break;
+                case Finish.ParkPale: color=new Color(.75f,.75f,.70f);gloss=.40f;break;
                 case Finish.Sheet: color=new Color(.63f,.65f,.64f);gloss=.42f;break;
                 case Finish.SheetShade: color=new Color(.41f,.43f,.43f);gloss=.32f;break;
                 case Finish.Trim: color=new Color(.10f,.119f,.124f);gloss=.37f;break;
@@ -478,7 +560,7 @@ namespace LifeCraft.World
                 case Finish.GlassShade: color=new Color(.22f,.32f,.38f,.47f);gloss=.77f;break;
                 case Finish.Ceiling: color=new Color(.86f,.85f,.81f);break;
                 case Finish.ParkGreen: color=new Color(.25f,.43f,.26f);break;
-                case Finish.Hedge: color=new Color(.36f,.52f,.23f);texture="Foliage";break;
+                case Finish.MegaPanel: color=new Color(.82f,.82f,.78f);gloss=.36f;break;
                 case Finish.Asphalt: color=new Color(.62f,.60f,.56f);texture="Asphalt";break;
                 default: color=new Color(.79f,.78f,.73f);break;
             }
@@ -511,6 +593,7 @@ namespace LifeCraft.World
             private readonly Dictionary<Finish,Geometry> groups=new Dictionary<Finish,Geometry>();
 
             internal Building(Transform root) { this.root=root; }
+            internal Transform Root => root;
 
             private Geometry Group(Finish finish)
             {
@@ -558,17 +641,24 @@ namespace LifeCraft.World
                 }
             }
 
-            internal void Brace(Face frame,Finish finish,float x0,float y0,float x1,float y1,float z,float radius)
+            internal void ParkCladdingFace(Face frame,Finish finish,float left,float right,float bottom,float top,float depth)
             {
-                Vector2 offset = new Vector2(y0-y1,x1-x0);
-                Vector2 normal = offset*(radius/offset.magnitude);
-                var a=frame.At(x0-normal.x,y0-normal.y,z);
-                var b=frame.At(x0+normal.x,y0+normal.y,z);
-                var c=frame.At(x1+normal.x,y1+normal.y,z);
-                var d=frame.At(x1-normal.x,y1-normal.y,z);
+                if (left>=right)
+                    return;
+                Group(finish).Quad(frame.At(left,bottom,depth),frame.At(right,bottom,depth),
+                    frame.At(right,top,depth),frame.At(left,top,depth));
+            }
+
+            internal void FacadeStrip(Face frame,Finish finish,float x0,float z0,float x1,float z1,float y0,float y1)
+            {
+                var a=frame.At(x0,y0,z0);
+                var b=frame.At(x1,y0,z1);
+                var c=frame.At(x1,y1,z1);
+                var d=frame.At(x0,y1,z0);
                 Geometry mesh=Group(finish);
                 mesh.Quad(a,b,c,d);
-                mesh.Quad(d,c,b,a);
+                if(finish!=Finish.Glass)
+                    mesh.Quad(d,c,b,a);
             }
 
             internal void Sign(Face frame,string label,float x,float y,float z,float size,Color color)

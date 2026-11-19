@@ -102,6 +102,7 @@ namespace LifeCraft.World
                 {
                     case "mega":
                         OmskMalls.BuildMega(site.Root.transform,Footprint(site));
+                        OmskMegaPylon.Build(site.Root.transform);
                         break;
                     case "park-mall":
                         OmskMalls.BuildPark(site.Root.transform,Footprint(site));
