@@ -7,6 +7,7 @@ namespace LifeCraftRP.Core
         public const int StarterCarPrice = 19000;
         public const int FuelPricePerLitre = 58;
         public const int CarTankLitres = 44;
+        public const int BusFare = 40;
         private readonly GameSession session;
 
         internal EconomyManager(GameSession game) { session = game; }
@@ -47,6 +48,13 @@ namespace LifeCraftRP.Core
                 state.FuelLitres = 30;
                 return GameResult.Ok("Автомобиль куплен. Ключи добавлены в профиль.");
             });
+        }
+
+        internal GameResult PayBusFare(string routeNumber)
+        {
+            return session.Change(state => Debit(state, BusFare)
+                ? GameResult.Ok($"Билет на автобус № {routeNumber} · {BusFare} ₽.")
+                : GameResult.Fail($"Для проезда нужно {BusFare} ₽."));
         }
 
         public GameResult Refuel(int requestedLitres)

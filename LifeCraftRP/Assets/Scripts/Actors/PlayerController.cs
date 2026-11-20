@@ -1,3 +1,4 @@
+using LifeCraft.World;
 using UnityEngine;
 
 namespace LifeCraftRP
@@ -17,13 +18,16 @@ namespace LifeCraftRP
         private bool menusOpen;
         private bool crouched;
         private float nextPunch;
+        private int busSeat;
         private readonly Collider[] overlap = new Collider[12];
 
         public ActorInput Input { get; private set; }
         public PlayerAnimationController Animation { get; private set; }
         public CameraController View { get; internal set; }
         public bool IsDriving => CurrentVehicle;
+        public bool IsRidingBus => CurrentBus != null;
         public VehicleController CurrentVehicle { get; private set; }
+        public OmskLiveBus CurrentBus { get; private set; }
         public VehicleController FocusedVehicle { get; set; }
         public float Stamina01 => stamina;
         public float Health01 { get; private set; } = 1f;
@@ -32,10 +36,11 @@ namespace LifeCraftRP
         public Vector3 Forward => transform.forward;
         public Vector3 CameraAnchor => IsDriving
             ? CurrentVehicle.transform.TransformPoint(new Vector3(0f,1.31f,.04f))
+            : IsRidingBus ? CurrentBus.Position + Vector3.up*2.85f
             : transform.position + Vector3.up*(crouched ? 1.10f : 1.62f);
         public Vector3 FirstPersonAnchor => IsDriving
             ? CurrentVehicle.transform.TransformPoint(new Vector3(-.33f,1.18f,.26f))
-            : transform.position + Vector3.up*(crouched ? 1.09f : 1.62f);
+            : transform.position + Vector3.up*(IsRidingBus ? 1.10f : crouched ? 1.09f : 1.62f);
 
         public bool MenusOpen
         {
@@ -119,6 +124,7 @@ namespace LifeCraftRP
         {
             if (IsDriving && !ExitVehicle(true))
                 return;
+            CurrentBus = null;
             controller.enabled = false;
             transform.position = position;
             velocity = Vector3.zero;
@@ -127,7 +133,7 @@ namespace LifeCraftRP
 
         public bool TryEnter(VehicleController vehicle)
         {
-            if (!vehicle || IsDriving || !vehicle.Drivable || vehicle.IsOccupied
+            if (!vehicle || IsDriving || IsRidingBus || !vehicle.Drivable || vehicle.IsOccupied
                 || (vehicle.transform.position-transform.position).sqrMagnitude > 4.25f*4.25f
                 || !vehicle.TryAssignDriver(this))
                 return false;
@@ -141,6 +147,50 @@ namespace LifeCraftRP
             if (View)
                 View.Align(vehicle.transform.eulerAngles.y);
             return true;
+        }
+
+        internal void BoardBus(OmskLiveBus bus, int seat)
+        {
+            if (CurrentBus == bus && busSeat == seat)
+                return;
+            Animation.Enter();
+            crouched = false;
+            controller.enabled = false;
+            velocity = Vector3.zero;
+            CurrentBus = bus;
+            busSeat = seat;
+            transform.SetPositionAndRotation(bus.GetSeatPosition(seat),bus.Rotation);
+            if (View)
+                View.Align(transform.eulerAngles.y);
+        }
+
+        internal void LeaveBus(Vector3 position, Quaternion rotation)
+        {
+            Teleport(position);
+            transform.rotation = rotation;
+            Animation.Exit();
+            if (View)
+                View.Align(transform.eulerAngles.y);
+        }
+
+        internal bool TryGetBusExit(OmskLiveBus bus, out Vector3 position)
+        {
+            Vector3 nearDoor = bus.BoardPosition;
+            for (int i = 0; i < 3; i++)
+            {
+                Vector3 curb = nearDoor + bus.Rotation*Vector3.right*(i*.45f);
+                if (Physics.Raycast(curb+Vector3.up,Vector3.down,out var hit,2f,
+                    ~0,QueryTriggerInteraction.Ignore))
+                {
+                    curb.y = hit.point.y+.06f;
+                    if (BlockedAt(curb))
+                        continue;
+                    position = curb;
+                    return true;
+                }
+            }
+            position = nearDoor;
+            return false;
         }
 
         public bool ExitVehicle(bool force = false)
@@ -191,6 +241,13 @@ namespace LifeCraftRP
 
         private void Update()
         {
+            if (IsRidingBus)
+            {
+                transform.SetPositionAndRotation(CurrentBus.GetSeatPosition(busSeat),CurrentBus.Rotation);
+                Animation.Animate(0,true,false,false,0,busPassenger:true);
+                stamina = Mathf.Min(1f,stamina+Time.deltaTime*.21f);
+                return;
+            }
             if (IsDriving)
             {
                 CurrentVehicle.SetInputs(menusOpen ? Vector2.zero : Input.Move,menusOpen || Input.BrakeHeld);

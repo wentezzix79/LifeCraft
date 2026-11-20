@@ -74,7 +74,7 @@ namespace LifeCraftRP
             ActorInput controls = player.Input;
             if (controls.CameraPressed)
                 SetFirstPerson(!FirstPerson);
-            portraitRequested = !FirstPerson && !player.IsDriving && !Application.isMobilePlatform &&
+            portraitRequested = !FirstPerson && !player.IsDriving && !player.IsRidingBus && !Application.isMobilePlatform &&
                 Application.isFocused && Cursor.lockState == CursorLockMode.Locked &&
                 controls.Move.sqrMagnitude < .001f && !controls.JumpPressed && Input.GetKey(KeyCode.C);
             if (portraitRequested)
@@ -116,6 +116,8 @@ namespace LifeCraftRP
                 offset = Quaternion.Euler(0f,player.transform.eulerAngles.y,0f) * new Vector3(.22f,.23f,3.10f);
             else if (player.IsDriving)
                 offset = rotation * new Vector3(.20f,.36f,-orbitDistance-1.12f);
+            else if (player.IsRidingBus)
+                offset = rotation * new Vector3(.56f,1.7f,-orbitDistance-4f);
             else
                 offset = rotation * new Vector3(.56f,.08f,-orbitDistance);
 

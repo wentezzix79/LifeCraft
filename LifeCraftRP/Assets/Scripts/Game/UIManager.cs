@@ -137,6 +137,8 @@ namespace LifeCraftRP
             interaction.enabled=hud.Visible && !IsOpen;
             if (game.Vehicles.IsDriving)
                 interaction.text=$"{game.Vehicles.Speed:0} км/ч    •    {game.Vehicles.Fuel:0.0} л";
+            else if (game.BusPrompt is string busPrompt)
+                interaction.text=Application.isMobilePlatform ? busPrompt : "[ E ]   "+busPrompt;
             else if(near!=null)
                 interaction.text=Application.isMobilePlatform ? near.Label : "[ E ]   "+near.Label;
             else

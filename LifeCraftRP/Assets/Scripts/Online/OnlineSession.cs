@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Text;
+using LifeCraft.World;
 using UnityEngine;
 using UnityEngine.Networking;
 
@@ -27,24 +28,36 @@ namespace LifeCraftRP
         public string UserName { get; private set; } = "";
         public string Status { get; private set; } = "Автономный режим";
         public OnlineChatMessage[] RecentChat { get; private set; } = Array.Empty<OnlineChatMessage>();
+        public string BusId { get; private set; } = "";
+        public int BusSeat { get; private set; }
+        public bool BusExitPending { get; private set; }
+        public bool BusCommandPending => pendingBus != null;
+        public bool SupportsBuses => busClock > 0;
+        public double BusTime => SupportsBuses
+            ? busClock + Time.realtimeSinceStartupAsDouble - busClockReceived
+            : DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() / 1000.0;
 
         public event Action Connected;
         public event Action Disconnected;
         public event Action<int> CashChanged;
         public event Action<string> StatusChanged;
         public event Action ChatChanged;
+        internal event Action<Vector3, Quaternion> BusExited;
 
         [Serializable]
         private sealed class PlayerState
         {
             public string name;
             public float x, y, z, yaw;
+            public string busId;
+            public int busSeat;
         }
 
         [Serializable]
         private sealed class RequestBody
         {
             public string name, password, message, action;
+            public string busId, requestId;
             public float x, y, z, yaw;
             public bool resync;
         }
@@ -55,6 +68,10 @@ namespace LifeCraftRP
             public string message, token;
             public int cash, stage, shelf;
             public bool corrected;
+            public string busId;
+            public int busSeat;
+            public double busTime;
+            public bool busExitPending;
             public PlayerState self;
             public PlayerState[] peers;
             public OnlineChatMessage[] chat;
@@ -67,17 +84,23 @@ namespace LifeCraftRP
             public PlayerAnimationController appearance;
             public Vector3 position;
             public Quaternion rotation;
+            public string busId;
+            public int busSeat;
         }
 
         private readonly Dictionary<string, RemotePlayer> peers = new Dictionary<string, RemotePlayer>();
         private readonly HashSet<string> seenPeers = new HashSet<string>();
         private readonly List<string> expiredPeers = new List<string>();
         private Transform avatar;
+        private OmskBusService buses;
         private string endpoint;
         private string token;
         private bool positionResync;
         private string pendingWork;
         private string pendingChat;
+        private RequestBody pendingBus;
+        private int busAttempts;
+        private double busClock, busClockReceived;
         private UnityWebRequest activeRequest;
         private int operationVersion;
 
@@ -91,7 +114,11 @@ namespace LifeCraftRP
             Instance = this;
         }
 
-        public void Configure(Transform avatarTransform) => avatar = avatarTransform;
+        public void Configure(Transform avatarTransform, OmskBusService busService)
+        {
+            avatar = avatarTransform;
+            buses = busService;
+        }
 
         public void LogIn(string host, string user, string password) => Authenticate(host, user, password, "/login");
 
@@ -153,7 +180,7 @@ namespace LifeCraftRP
             token = response.token;
             UserName = response.self.name;
             IsOnline = true;
-            ApplyLocation(response.self);
+            ApplyPresence(response,true);
             ApplyEconomy(response);
             SetStatus(response.message);
             Connected?.Invoke();
@@ -177,6 +204,14 @@ namespace LifeCraftRP
         }
 
         public void ResyncPosition() => positionResync = true;
+
+        internal void SendBusCommand(string action, string id)
+        {
+            if (!IsOnline || !SupportsBuses || pendingBus != null || string.IsNullOrEmpty(id))
+                return;
+            pendingBus = new RequestBody { action = action, busId = id, requestId = Guid.NewGuid().ToString("N") };
+            busAttempts = 0;
+        }
 
         public void LogOut()
         {
@@ -221,8 +256,7 @@ namespace LifeCraftRP
                         return;
                     }
                     syncSucceeded = true;
-                    if (reply.corrected && reply.self != null)
-                        ApplyLocation(reply.self);
+                    ApplyPresence(reply,reply.corrected);
                     positionResync = false;
                     ApplyEconomy(reply);
                     ApplyPeers(reply.peers);
@@ -236,7 +270,9 @@ namespace LifeCraftRP
                     if (failedPolls > 0)
                         SetStatus("Связь с сервером восстановлена.");
                     failedPolls = 0;
-                    if (pendingWork != null)
+                    if (pendingBus != null)
+                        yield return BusCommand(version);
+                    if (version == operationVersion && pendingWork != null)
                     {
                         string action = pendingWork;
                         pendingWork = null;
@@ -256,6 +292,32 @@ namespace LifeCraftRP
                 }
                 yield return new WaitForSecondsRealtime(syncSucceeded ? .22f : 1f);
             }
+        }
+
+        private IEnumerator BusCommand(int version)
+        {
+            RequestBody body = pendingBus;
+            yield return Request(endpoint, "/bus", body, token, (reply, success, code) =>
+            {
+                if (version != operationVersion)
+                    return;
+                if (code == 401)
+                {
+                    EndSession(reply.message);
+                    return;
+                }
+                if (success)
+                {
+                    ApplyPresence(reply,reply.corrected);
+                    ApplyEconomy(reply);
+                }
+                else if ((code == 0 || code >= 500) && ++busAttempts < 3)
+                {
+                    return;
+                }
+                pendingBus = null;
+                SetStatus(reply.message);
+            });
         }
 
         private IEnumerator Command(string route, RequestBody body, int version)
@@ -350,6 +412,31 @@ namespace LifeCraftRP
                 controller.enabled = true;
         }
 
+        private void ApplyPresence(Reply reply, bool applyLocation)
+        {
+            string previous = BusId;
+            if (reply.busTime > 0 && !double.IsInfinity(reply.busTime))
+            {
+                double estimate = BusTime;
+                busClock = SupportsBuses && Math.Abs(estimate-reply.busTime) < .45
+                    ? estimate + (reply.busTime - estimate) * .15
+                    : reply.busTime;
+                busClockReceived = Time.realtimeSinceStartupAsDouble;
+                BusId = reply.busId ?? "";
+                BusSeat = reply.busSeat;
+                BusExitPending = reply.busExitPending;
+            }
+            if (reply.self == null || BusId.Length > 0)
+                return;
+            if (previous.Length > 0 && BusExited != null)
+            {
+                PlayerState state = reply.self;
+                BusExited.Invoke(new Vector3(state.x,state.y,state.z),Quaternion.Euler(0,state.yaw,0));
+            }
+            else if (applyLocation)
+                ApplyLocation(reply.self);
+        }
+
         private void ApplyChat(OnlineChatMessage[] items)
         {
             if (items == null || (items.Length == RecentChat.Length
@@ -376,6 +463,8 @@ namespace LifeCraftRP
                 }
                 peer.position = position;
                 peer.rotation = Quaternion.Euler(0, state.yaw, 0);
+                peer.busId = state.busId;
+                peer.busSeat = state.busSeat;
             }
 
             expiredPeers.Clear();
@@ -420,10 +509,19 @@ namespace LifeCraftRP
             foreach (var peer in peers.Values)
             {
                 var pose = peer.root.transform;
-                float speed = Mathf.Min(Vector3.Distance(pose.position,peer.position)*14f,7f);
-                pose.position = Vector3.Lerp(pose.position, peer.position, weight);
-                peer.appearance.Animate(speed,true,false,false,0);
-                pose.rotation = Quaternion.Slerp(pose.rotation, peer.rotation, weight);
+                bool riding = !string.IsNullOrEmpty(peer.busId);
+                float speed = 0f;
+                if (riding && buses != null && buses.TryGetBus(peer.busId,out var bus) && bus.Active)
+                {
+                    pose.SetPositionAndRotation(bus.GetSeatPosition(peer.busSeat),bus.Rotation);
+                }
+                else
+                {
+                    speed = Mathf.Min(Vector3.Distance(pose.position,peer.position)*14f,7f);
+                    pose.SetPositionAndRotation(Vector3.Lerp(pose.position,peer.position,weight),
+                        Quaternion.Slerp(pose.rotation,peer.rotation,weight));
+                }
+                peer.appearance.Animate(speed,true,false,false,0,riding);
                 if (mainCamera != null)
                     peer.label.transform.rotation = mainCamera.transform.rotation;
             }
@@ -448,6 +546,11 @@ namespace LifeCraftRP
             UserName = "";
             positionResync = false;
             pendingWork = pendingChat = null;
+            pendingBus = null;
+            BusId = "";
+            BusSeat = 0;
+            BusExitPending = false;
+            busClock = 0;
             ApplyPeers(null);
             RecentChat = Array.Empty<OnlineChatMessage>();
             ChatChanged?.Invoke();
