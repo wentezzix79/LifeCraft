@@ -331,7 +331,8 @@ namespace LifeCraftRP
                 phone.SetActive(enabled);
         }
 
-        internal void Animate(float speed, bool grounded, bool crouched, bool driving, float verticalVelocity)
+        internal void Animate(float speed, bool grounded, bool crouched, bool driving, float verticalVelocity,
+            bool busPassenger = false)
         {
             if (!body || firstPerson)
                 return;
@@ -344,7 +345,7 @@ namespace LifeCraftRP
             lastGrounded = grounded;
             if (Animator.runtimeAnimatorController)
             {
-                AnimateState(speed,grounded,crouched,driving,verticalVelocity);
+                AnimateState(speed,grounded,crouched,driving,verticalVelocity,busPassenger);
                 return;
             }
             landAmount = Mathf.MoveTowards(landAmount,0f,dt*.75f);
@@ -354,14 +355,15 @@ namespace LifeCraftRP
             float stride = Mathf.Lerp(21f,54f,Mathf.Clamp01(animationSpeed/7.2f))*stepAmount;
             float idle = Mathf.Sin(Time.time*1.31f)*.0022f;
             float crouchHeight = crouched ? .57f : .95f;
-            float height = driving ? .41f : crouchHeight + Mathf.Abs(Mathf.Sin(phase))*stepAmount*.042f + idle - landAmount;
+            float height = driving ? .41f : busPassenger ? .47f :
+                crouchHeight + Mathf.Abs(Mathf.Sin(phase))*stepAmount*.042f + idle - landAmount;
             float bend = driving ? 8f : crouched ? 20f : 4f+animationSpeed*1.3f;
             float work = Mathf.Clamp01((workUntil-Time.time)/.72f);
             work = Mathf.Sin(work*Mathf.PI);
             float attack = Mathf.Clamp01((punchUntil-Time.time)/.44f);
             attack = Mathf.Sin(attack*Mathf.PI);
             float boarding = Mathf.Clamp01((enterUntil-Time.time)/.42f);
-            bool relaxed = grounded && animationSpeed < .30f && !crouched && !driving &&
+            bool relaxed = grounded && animationSpeed < .30f && !crouched && !driving && !busPassenger &&
                 !carrying && !onPhone && work < .02f && attack < .02f && boarding < .02f;
             body.localPosition = Vector3.Lerp(body.localPosition,new Vector3(0,height,0),dt*16f);
             body.localRotation = Quaternion.Euler(bend+work*22f,attack*21f,boarding*12f);
@@ -386,6 +388,7 @@ namespace LifeCraftRP
                 if (onPhone && i == 1) { shoulder = -32f; elbow = -120f; }
                 if (i == 1) { shoulder -= 86f*attack; elbow *= 1f-attack; }
                 if (driving) { hip = -80f; knee = 70f; shoulder = -52f; elbow = -35f; }
+                if (busPassenger) { hip = -80f; knee = 70f; shoulder = -18f; elbow = -22f; }
                 float softness = dt*17f;
                 Pose(hips[i],Quaternion.Euler(hip,0f,side*2f),softness);
                 Pose(knees[i],Quaternion.Euler(knee,0f,0f),softness);
@@ -397,13 +400,14 @@ namespace LifeCraftRP
             }
         }
 
-        private void AnimateState(float speed,bool grounded,bool crouched,bool driving,float verticalVelocity)
+        private void AnimateState(float speed,bool grounded,bool crouched,bool driving,float verticalVelocity,bool busPassenger)
         {
             float now = Time.time;
             string state;
             if (enterUntil > now) state = "Enter Vehicle";
             else if (exitUntil > now) state = "Exit Vehicle";
             else if (driving) state = "Drive";
+            else if (busPassenger) state = Animator.HasState(0,Animator.StringToHash("Base Layer.Sit")) ? "Sit" : "Drive";
             else if (!grounded) state = verticalVelocity > 0f ? "Jump" : "Fall";
             else if (landUntil > now) state = "Land";
             else if (punchUntil > now) state = "Punch";

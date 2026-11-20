@@ -20,6 +20,7 @@ namespace LifeCraftRP
         public VehicleManager Vehicles { get; private set; }
         public OnlineSession Network { get; private set; }
         public OmskWorld World { get; private set; }
+        public OmskBusService Buses { get; private set; }
         public bool Online => Network != null && Network.IsOnline;
         public int Hour => (int)(clockMinutes / 60f) % 24;
         public int Minute => (int)clockMinutes % 60;
@@ -40,6 +41,9 @@ namespace LifeCraftRP
         private Vector3 beforeOnline;
         private int quality;
         private WeatherController weather;
+        private BusPassenger passenger;
+
+        internal string BusPrompt => passenger?.Prompt;
 
         private readonly struct VisualProfile
         {
@@ -89,7 +93,10 @@ namespace LifeCraftRP
             VehicleController car = VehicleController.Create(ShowroomParking, Quaternion.Euler(0f,90f,0f));
             Vehicles = new VehicleManager(Player,Session,car);
             Network = new GameObject("Сеть LIFE CRAFT").AddComponent<OnlineSession>();
-            Network.Configure(Player.transform);
+            Buses = new GameObject("Омск · городские автобусы").AddComponent<OmskBusService>();
+            Buses.Initialize(Player.transform,() => Network.BusTime);
+            Network.Configure(Player.transform,Buses);
+            passenger = new BusPassenger(this);
             Network.Connected += OnConnected;
             Network.Disconnected += OnDisconnected;
             SetupLighting();
@@ -117,9 +124,9 @@ namespace LifeCraftRP
 
         public void Connect(string host, string name, string password, bool register)
         {
-            if (Vehicles.IsDriving)
+            if (Vehicles.IsDriving || Player.IsRidingBus)
             {
-                Notify("Выйдите из машины перед подключением.");
+                Notify("Выйдите из транспорта перед подключением.");
                 return;
             }
             if (Online || Network.IsConnecting)
@@ -315,15 +322,16 @@ namespace LifeCraftRP
             else if (!ui.IsTyping && input.PhonePressed)
                 Toggle("phone");
 
+            passenger.Tick();
             Vector3 position = Player.transform.position;
-            InteractionSystem.Site near = Vehicles.IsDriving ? null :
+            InteractionSystem.Site near = Vehicles.IsDriving || Player.IsRidingBus ? null :
                 Interactions.Find(position, Player.transform.forward);
             if (!ui.IsOpen)
             {
-                if (input.VehiclePressed)
+                if (input.VehiclePressed && !Player.IsRidingBus && !Network.BusCommandPending)
                     Show(Vehicles.Toggle(Online));
-                else if (input.InteractPressed && near != null)
-                    near.Use();
+                else if (input.InteractPressed && !passenger.Use())
+                    near?.Use();
             }
 
             clockMinutes = (clockMinutes+Time.deltaTime*3f)%1440f;
@@ -431,9 +439,9 @@ namespace LifeCraftRP
                 Notify("Быстрый переход доступен в одиночной игре.");
                 return false;
             }
-            if (Vehicles.IsDriving || Player.Animation.Carrying)
+            if (Vehicles.IsDriving || Player.IsRidingBus || Player.Animation.Carrying)
             {
-                Notify("Для перехода выйдите из машины или завершите перенос груза.");
+                Notify("Для перехода выйдите из транспорта или завершите перенос груза.");
                 return false;
             }
             if (!World.PrepareVisit(site))
@@ -464,7 +472,7 @@ namespace LifeCraftRP
 
         public void SaveProgress()
         {
-            if (Online || Network == null || Network.IsConnecting || Vehicles.IsDriving)
+            if (Online || Network == null || Network.IsConnecting || Vehicles.IsDriving || Player.IsRidingBus)
                 return;
             Vector3 p = Player.transform.position;
             if (p.y > -.5f)

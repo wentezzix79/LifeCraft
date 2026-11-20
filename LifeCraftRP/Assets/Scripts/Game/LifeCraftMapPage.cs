@@ -3,12 +3,13 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Globalization;
 using LifeCraft.World;
+using LifeCraftRP.Core;
 using UnityEngine;
 using UnityEngine.UI;
 
 namespace LifeCraftRP
 {
-    internal sealed class LifeCraftMapPage
+    internal sealed partial class LifeCraftMapPage
     {
         private const string FavoritesKey = "LifeCraft.Map.Favorites";
         private static readonly Color Shell = new Color(.09f,.071f,.132f);
@@ -25,9 +26,10 @@ namespace LifeCraftRP
         private readonly GameManager game;
         private readonly Font font;
         private readonly Action close;
-        private readonly RectTransform root,safeArea;
+        private readonly RectTransform root,safeArea,placePane,placeMarkers;
         private readonly LifeCraftMapViewport viewport;
         private readonly InputField search;
+        private readonly Text searchHint;
         private readonly Text empty;
         private readonly Text selectionTitle, selectionDetail, modeLabel, routeLabel;
         private readonly Text listLabel,listSwitchLabel,favoriteLabel,routeHint,scale;
@@ -108,16 +110,19 @@ namespace LifeCraftRP
             search=query.gameObject.AddComponent<InputField>();
             search.targetGraphic=query.GetComponent<Image>();
             search.textComponent=Label(query,"",18,Ink);
-            var ghost=Label(query,"Найти место или адрес",18,Muted);
-            search.placeholder=ghost;
+            searchHint=Label(query,"Найти место или адрес",18,Muted);
+            search.placeholder=searchHint;
             Stretch(search.textComponent.rectTransform,17,4,14,4);
-            Stretch(ghost.rectTransform,17,4,14,4);
+            Stretch(searchHint.rectTransform,17,4,14,4);
             search.characterLimit=80;
             search.onValueChanged.AddListener(_=>RefreshResults());
             search.onEndEdit.AddListener(_=>
             {
-                if ((Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.KeypadEnter)) &&
-                    resultsBuffer.Count>0)
+                if (!Input.GetKeyDown(KeyCode.Return) && !Input.GetKeyDown(KeyCode.KeypadEnter))
+                    return;
+                if (busMode)
+                    SelectFirstBusResult();
+                else if (resultsBuffer.Count>0)
                     Select(resultsBuffer[0],true);
             });
             Place(Button(header,"Игра  ×",close,out _),1,1,-24,-19,113,48);
@@ -126,7 +131,9 @@ namespace LifeCraftRP
             Stretch(area,24,62,sideWidth+39,102);
             viewport=LifeCraftMapViewport.Create(area);
             viewport.Changed+=UpdateMapMarkers;
-            viewport.MapClicked+=PlaceDroppedPin;
+            viewport.MapClicked+=MapClicked;
+            placeMarkers=Rect(viewport.MarkerLayer,"Места на карте");
+            Stretch(placeMarkers,0,0,0,0);
             playerMarker=Panel(viewport.MarkerLayer,"Игрок",new Color(.37f,.13f,.70f),false);
             playerMarker.sizeDelta=new Vector2(24,31);
             playerMarker.GetComponent<Image>().sprite=ArrowSprite();
@@ -149,18 +156,20 @@ namespace LifeCraftRP
             sidebar.pivot=new Vector2(1,.5f);
             sidebar.offsetMin=new Vector2(-sideWidth-24,62);
             sidebar.offsetMax=new Vector2(-24,-102);
-            Place(Label(sidebar,"Слои",20,Ink,FontStyle.Bold).rectTransform,0,1,15,-10,220,31);
+            BuildBusPane(sidebar,sideWidth);
+            placePane=Rect(sidebar,"Места и слои карты");
+            Stretch(placePane,0,0,0,0);
             for (int i=0;i<Layers.Length;i++)
             {
                 string layer=Layers[i];
-                var button=Button(sidebar,LayerNames[i],()=>ToggleLayer(layer),out filters[i]);
+                var button=Button(placePane,LayerNames[i],()=>ToggleLayer(layer),out filters[i]);
                 Place(button,0,1,15+(i%2)*(sideWidth-22)*.5f,-48-(i/2)*39,(sideWidth-45)*.5f,34);
                 filters[i].fontSize=15;
             }
 
-            listLabel=Label(sidebar,"Места рядом",18,Ink,FontStyle.Bold);
+            listLabel=Label(placePane,"Места рядом",18,Ink,FontStyle.Bold);
             Place(listLabel.rectTransform,0,1,15,-172,sideWidth-165,34);
-            var switchList=Button(sidebar,"Избранное",()=>
+            var switchList=Button(placePane,"Избранное",()=>
             {
                 favoritesOnly=!favoritesOnly;
                 RefreshResults();
@@ -168,7 +177,7 @@ namespace LifeCraftRP
             listSwitchLabel.fontSize=14;
             Place(switchList,1,1,-15,-172,117,34);
 
-            RectTransform list=Panel(sidebar,"Результаты",Shell,true);
+            RectTransform list=Panel(placePane,"Результаты",Shell,true);
             Stretch(list,12,192,12,215);
             list.gameObject.AddComponent<RectMask2D>();
             results=list.gameObject.AddComponent<ScrollRect>();
@@ -186,7 +195,7 @@ namespace LifeCraftRP
             empty=Label(list,"",15,Muted);
             Place(empty.rectTransform,0,1,14,-9,sideWidth-56,50);
 
-            var detail=Panel(sidebar,"Выбранное место",Shell,true);
+            var detail=Panel(placePane,"Выбранное место",Shell,true);
             Place(detail,0,0,12,12,sideWidth-24,166);
             selectionTitle=Label(detail,"",19,Ink,FontStyle.Bold);
             Place(selectionTitle.rectTransform,0,1,11,-7,sideWidth-48,30);
@@ -232,6 +241,7 @@ namespace LifeCraftRP
                 var point=points.Find(p=>p.id==focusId);
                 if (point!=null)
                 {
+                    SetBusMode(false);
                     visibleLayers.Add(point.category);
                     UpdateFilterText();
                     Select(point,true);
@@ -258,6 +268,8 @@ namespace LifeCraftRP
             {
                 FitSafeArea();
                 UpdatePlayerMarker();
+                if (busMode)
+                    UpdateBuses();
             }
             if (destination!=null && route.Length>0)
             {
@@ -313,6 +325,11 @@ namespace LifeCraftRP
 
         private void RefreshResults()
         {
+            if (busMode)
+            {
+                RefreshBusResults();
+                return;
+            }
             string query=search.text.Trim();
             resultsBuffer.Clear();
             foreach (var point in points)
@@ -371,8 +388,13 @@ namespace LifeCraftRP
             UpdateMapMarkers();
         }
 
-        private void PlaceDroppedPin(Vector3 position)
+        private void MapClicked(Vector3 position)
         {
+            if (busMode)
+            {
+                SelectBusStopNear(position);
+                return;
+            }
             droppedPin=new OmskMapCatalog.Point
             {
                 id="map-pin",name="Метка на карте",detail="Выбранная точка",category="city",
@@ -457,7 +479,8 @@ namespace LifeCraftRP
                 }
                 float aspect=viewport.View.width/Mathf.Max(1f,viewport.View.height);
                 float width=Mathf.Max(450f,Mathf.Max(maxX-minX,(maxZ-minZ)*aspect)*1.27f);
-                viewport.Center(new Vector3((minX+maxX)*.5f,0,(minZ+maxZ)*.5f),width);
+                if (!busMode)
+                    viewport.Center(new Vector3((minX+maxX)*.5f,0,(minZ+maxZ)*.5f),width);
                 viewport.SetRoute(route);
                 SetMessage((drive?"На машине":"Пешком")+" · "+Distance(length)+" · "+target.name);
             }
@@ -515,6 +538,14 @@ namespace LifeCraftRP
 
         private void UpdateRouteHint()
         {
+            if (busMode)
+            {
+                routeHint.text=messageUntil>0f && !string.IsNullOrEmpty(routeMessage)
+                    ? routeMessage : "Проезд "+EconomyManager.BusFare+" ₽ · Время прибытия на выбранную остановку";
+                routeHint.color=Muted;
+                cancelButton.gameObject.SetActive(false);
+                return;
+            }
             routeHint.text=string.IsNullOrEmpty(routeMessage)
                 ? Application.isMobilePlatform ? "Сдвиньте карту пальцем." : "Перетащите карту. Колесо меняет масштаб."
                 : routeMessage;
@@ -526,6 +557,21 @@ namespace LifeCraftRP
         {
             if (viewport==null || playerMarker==null || scale==null)
                 return;
+            if (busMode)
+                UpdateBusMarkers();
+            else
+                UpdatePlaceMarkers();
+            float metres=viewport.View.width*112f/Mathf.Max(1f,viewport.MarkerLayer.rect.width);
+            float unit=Mathf.Pow(10f,Mathf.Floor(Mathf.Log10(Mathf.Max(1f,metres))));
+            float value=metres>=5f*unit?5f*unit:metres>=2f*unit?2f*unit:unit;
+            scale.text=Distance(value);
+            scaleBar.sizeDelta=new Vector2(Mathf.Min(112f,value/viewport.View.width*viewport.MarkerLayer.rect.width),2);
+            playerMarker.SetAsLastSibling();
+            UpdatePlayerMarker();
+        }
+
+        private void UpdatePlaceMarkers()
+        {
             visiblePoints.Clear();
             foreach (var point in points)
             {
@@ -592,13 +638,6 @@ namespace LifeCraftRP
                 if (point==selection)
                     pin.Rect.SetAsLastSibling();
             }
-            float metres=viewport.View.width*112f/Mathf.Max(1f,markerSize.x);
-            float unit=Mathf.Pow(10f,Mathf.Floor(Mathf.Log10(Mathf.Max(1f,metres))));
-            float value=metres>=5f*unit?5f*unit:metres>=2f*unit?2f*unit:unit;
-            scale.text=Distance(value);
-            scaleBar.sizeDelta=new Vector2(Mathf.Min(112f,value/viewport.View.width*markerSize.x),2);
-            playerMarker.SetAsLastSibling();
-            UpdatePlayerMarker();
         }
 
         private int Rank(OmskMapCatalog.Point point) => point==selection ? 0 :
@@ -608,7 +647,7 @@ namespace LifeCraftRP
         private Pin CreatePin()
         {
             var pin=new Pin();
-            pin.Rect=Button(viewport.MarkerLayer,"",()=>
+            pin.Rect=Button(placeMarkers,"",()=>
             {
                 if (pin.Point!=null)
                     Select(pin.Point,false);

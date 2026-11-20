@@ -16,6 +16,7 @@ namespace LifeCraftRP
         private RawImage raster;
         private RawImage districts;
         private LifeCraftRouteGraphic route;
+        private LifeCraftRouteGraphic busRoute;
         private CanvasGroup markerInput;
         private Rect view;
         private float width = InitialWidth;
@@ -82,6 +83,10 @@ namespace LifeCraftRP
             viewport.districts.texture = Resources.Load<Texture2D>("Omsk/ui-districts-map");
             viewport.route = Layer<LifeCraftRouteGraphic>(viewport.bounds,"Линия маршрута");
             viewport.route.raycastTarget = false;
+            viewport.busRoute = Layer<LifeCraftRouteGraphic>(viewport.bounds,"Линия автобуса");
+            viewport.busRoute.color = new Color(.34f,.94f,.79f);
+            viewport.busRoute.raycastTarget = false;
+            viewport.busRoute.gameObject.SetActive(false);
             viewport.MarkerLayer = Layer<RectTransform>(viewport.bounds,"Метки");
             viewport.markerInput = viewport.MarkerLayer.gameObject.AddComponent<CanvasGroup>();
             viewport.SetDistricts(true);
@@ -104,6 +109,13 @@ namespace LifeCraftRP
         }
 
         public void SetRoute(Vector2[] points) => route.SetRoute(points,view);
+
+        public void SetBusRoute(bool show,Vector2[] points)
+        {
+            route.gameObject.SetActive(!show);
+            busRoute.gameObject.SetActive(show);
+            busRoute.SetRoute(points,view);
+        }
 
         public bool Project(Vector3 world,out Vector2 normalized)
         {
@@ -145,6 +157,7 @@ namespace LifeCraftRP
             DrawRaster(raster,view);
             districts.uvRect = Uv(view,city);
             route.SetView(view);
+            busRoute?.SetView(view);
             Changed?.Invoke();
         }
 
